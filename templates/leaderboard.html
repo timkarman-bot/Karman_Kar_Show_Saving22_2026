@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1>Live Leaderboard</h1>
+
+<p>
+    Live voting results by car and military branch.
+</p>
+
+<table>
+    <tr>
+        <th>Car</th>
+        <th>Branch</th>
+        <th>Votes</th>
+        <th>Total $</th>
+    </tr>
+
+    {% for row in totals %}
+    <tr>
+        <td>{{ row[0] }}</td>
+        <td>{{ row[1] }}</td>
+        <td>{{ row[2] }}</td>
+        <td>${{ row[3] }}</td>
+    </tr>
+    {% endfor %}
+
+</table>
+
+{% endblock %}

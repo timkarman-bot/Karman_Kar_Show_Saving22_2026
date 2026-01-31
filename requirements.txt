@@ -1,0 +1,5 @@
+Flask==2.3.3
+stripe==10.19.0
+qrcode==7.4.2
+flask-sslify==0.1.5
+gunicorn

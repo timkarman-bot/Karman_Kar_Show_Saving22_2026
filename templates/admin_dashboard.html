@@ -1,0 +1,27 @@
+<h1>Admin Dashboard</h1>
+<p>Voting status: {{ 'Open' if event['voting_open'] else 'Closed' }}</p>
+<form method="POST">
+    <label>Status:</label>
+    <select name="status">
+        <option value="open">Open</option>
+        <option value="closed">Closed</option>
+    </select>
+    <br>
+    <label>Voting End Time (ISO format):</label>
+    <input type="datetime-local" name="end_time">
+    <br>
+    <button type="submit">Update Voting</button>
+</form>
+
+<h2>Live Results</h2>
+<table border="1">
+    <tr><th>Branch</th><th>Votes</th></tr>
+    {% for row in results %}
+    <tr>
+        <td>{{ row['branch'] }}</td>
+        <td>{{ row['votes'] }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<a href="/admin/logout">Logout</a>

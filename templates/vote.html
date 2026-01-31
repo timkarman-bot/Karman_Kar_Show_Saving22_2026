@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1>Vote for Car {{ car_id }}</h1>
+
+<form method="POST" action="/create-checkout-session">
+
+    <input type="hidden" name="car_id" value="{{ car_id }}">
+
+    <label for="branch">Select Branch</label>
+    <select name="branch" id="branch" required>
+        {% for branch in branches %}
+        <option value="{{ branch }}">{{ branch }}</option>
+        {% endfor %}
+    </select>
+
+    <label for="amount">Vote Amount</label>
+    <select name="amount" id="amount">
+        <option value="1">$1 per vote</option>
+        <option value="5">$5 per vote</option>
+    </select>
+
+    <label for="quantity">Number of Votes</label>
+    <input
+        type="number"
+        id="quantity"
+        name="quantity"
+        min="1"
+        max="20"
+        value="1"
+        required
+    >
+
+    <button type="submit">Vote Securely with Stripe</button>
+
+</form>
+
+{% endblock %}

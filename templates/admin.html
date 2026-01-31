@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1>Admin Dashboard</h1>
+
+<hr>
+
+<h2>Voting Controls</h2>
+
+<form method="POST" action="/admin/set-end-time">
+    <label>Set Voting End Date & Time</label><br>
+    <input type="datetime-local" name="end_time">
+    <br>
+    <button type="submit">Set End Time</button>
+</form>
+
+<br>
+
+<form method="POST" action="/admin/lock">
+    <button class="danger">Lock Voting Now</button>
+</form>
+
+<form method="POST" action="/admin/unlock">
+    <button class="success">Unlock Voting</button>
+</form>
+
+<hr>
+
+<h2>Live Vote Totals</h2>
+
+<table>
+    <tr>
+        <th>Car</th>
+        <th>Branch</th>
+        <th>Total Votes</th>
+        <th>Total Raised</th>
+    </tr>
+
+    {% for row in totals %}
+    <tr>
+        <td>{{ row[0] }}</td>
+        <td>{{ row[1] }}</td>
+        <td>{{ row[2] }}</td>
+        <td>${{ row[3] }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% endblock %}
