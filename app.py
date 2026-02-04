@@ -1,9 +1,10 @@
 import os
-from datetime import datetime, timedelta
+#from datetime import datetime, timedelta
+from database import init_db, record_vote, get_totals
 
 import stripe
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session
-
+init_db()
 
 # ===============================
 # APP SETUP
