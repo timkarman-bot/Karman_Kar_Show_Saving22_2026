@@ -1,10 +1,10 @@
 import os
-#from datetime import datetime, timedelta
-from database import init_db, record_vote, get_totals
+from datetime import datetime, timedelta
 
 import stripe
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session
-init_db()
+
+from database import init_db, record_vote, get_totals
 
 # ===============================
 # APP SETUP
@@ -33,7 +33,6 @@ BRANCHES = [
     "Space Force",
     "People’s Choice",
 ]
-
 PEOPLES_CHOICE = "People’s Choice"
 
 # Voting lock controls (in-memory)
@@ -43,9 +42,8 @@ VOTING_END_DATETIME = None  # datetime(...)
 # Admin session settings
 ADMIN_SESSION_IDLE_MINUTES = 30
 
-
 # ===============================
-# INIT
+# INIT DB (once)
 # ===============================
 init_db()
 
@@ -158,7 +156,7 @@ def create_checkout_session():
                 "vote.html",
                 car_id=car_id,
                 branches=BRANCHES,
-                error="Branch voting requires veteran confirmation. Please check both boxes, or select People’s Choice."
+                error="Branch voting requires veteran confirmation. Please check both boxes, or select People’s Choice.",
             ), 400
 
     # Stripe Checkout Session
@@ -205,9 +203,7 @@ def health():
 @app.route("/admin-login", methods=["GET", "POST"])
 def admin_login():
     if not ADMIN_PASSWORD:
-        return (
-            "Admin login is not configured. Set ADMIN_PASSWORD in Railway Variables.", 500
-        )
+        return "Admin login is not configured. Set ADMIN_PASSWORD in Railway Variables.", 500
 
     error = None
     if request.method == "POST":
@@ -327,12 +323,7 @@ def webhook():
             return "", 200
 
         # Enforce $1 vote_amount only
-        if (
-            1 <= car_id <= MAX_CARS
-            and branch in BRANCHES
-            and votes > 0
-            and vote_amount == 1
-        ):
+        if (1 <= car_id <= MAX_CARS) and (branch in BRANCHES) and (votes > 0) and (vote_amount == 1):
             record_vote(car_id, branch, vote_amount, votes, stripe_session_id)
 
     return "", 200
