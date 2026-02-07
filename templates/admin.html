@@ -13,6 +13,14 @@
     <br>
     <button type="submit">Set End Time</button>
 </form>
+<br>
+
+<h3>Max Cars</h3>
+<form method="POST" action="/admin/set-max-cars">
+  <label>Set Maximum Number of Cars</label><br>
+  <input type="number" name="max_cars" min="1" max="2000" value="{{ max_cars }}" required>
+  <button type="submit">Update Max Cars</button>
+</form>
 
 <br>
 
