@@ -1,5 +1,6 @@
 import os
-from datetime import datetime, timedelta
+# removed for manual entering number of cars from datetime import datetime, timedelta
+from database import init_db, record_vote, get_totals, get_setting, set_setting
 
 import stripe
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session
@@ -22,7 +23,7 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 # Config
-MAX_CARS = int(os.getenv("MAX_CARS", "300"))
+DEFAULT_get_max_cars() = int(os.getenv("get_max_cars()", "300"))
 
 BRANCHES = [
     "Army",
@@ -46,6 +47,7 @@ ADMIN_SESSION_IDLE_MINUTES = 30
 # INIT DB (once)
 # ===============================
 init_db()
+init_settings()
 
 
 # ===============================
@@ -96,6 +98,13 @@ def requires_veteran_attestation(branch: str) -> bool:
     # Only People’s Choice is open to all
     return branch != PEOPLES_CHOICE
 
+# Added to manually enter the max number of cars
+def get_get_max_cars()() -> int:
+    try:
+        return int(get_setting("get_max_cars()", str(DEFAULT_get_max_cars())))
+    except Exception:
+        return DEFAULT_get_max_cars()
+
 
 # ===============================
 # PUBLIC ROUTES
@@ -107,7 +116,7 @@ def home():
 
 @app.route("/vote/<int:car_id>")
 def vote(car_id):
-    if car_id < 1 or car_id > MAX_CARS:
+    if car_id < 1 or car_id > get_max_cars():
         return "Invalid car number", 404
 
     if not voting_is_open():
@@ -137,7 +146,7 @@ def create_checkout_session():
     served_branch_confirm = truthy_checkbox(request.form.get("served_branch_confirm", ""))
 
     # Validate
-    if not (1 <= car_id <= MAX_CARS):
+    if not (1 <= car_id <= get_max_cars()):
         return "Invalid car id", 400
     if branch not in BRANCHES:
         return "Invalid category", 400
@@ -200,7 +209,7 @@ def health():
 # ===============================
 # ADMIN AUTH ROUTES
 # ===============================
-@app.route("/admin-login", methods=["GET", "POST"])
+max_cars=get_max_cars(),@app.route("/admin-login", methods=["GET", "POST"])
 def admin_login():
     if not ADMIN_PASSWORD:
         return "Admin login is not configured. Set ADMIN_PASSWORD in Railway Variables.", 500
@@ -235,7 +244,7 @@ def admin():
     return render_template(
         "admin.html",
         totals=get_totals(),
-        max_cars=MAX_CARS,
+        get_max_cars()=get_max_cars(),
         voting_open=voting_is_open(),
         voting_end=VOTING_END_DATETIME,
         voting_locked=VOTING_MANUALLY_LOCKED,
@@ -323,7 +332,7 @@ def webhook():
             return "", 200
 
         # Enforce $1 vote_amount only
-        if (1 <= car_id <= MAX_CARS) and (branch in BRANCHES) and (votes > 0) and (vote_amount == 1):
+        if (1 <= car_id <= get_max_cars()) and (branch in BRANCHES) and (votes > 0) and (vote_amount == 1):
             record_vote(car_id, branch, vote_amount, votes, stripe_session_id)
 
     return "", 200
