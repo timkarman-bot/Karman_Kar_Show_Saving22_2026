@@ -10,6 +10,9 @@ def _conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
 
 
+# ===============================
+# INIT DATABASE TABLES
+# ===============================
 def init_db():
     conn = _conn()
     cur = conn.cursor()
@@ -25,49 +28,61 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
-    def init_settings():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
+
+    conn.commit()
+    conn.close()
+
+
+# ===============================
+# SETTINGS TABLE (for max cars etc)
+# ===============================
+def init_settings():
+    conn = _conn()
+    cur = conn.cursor()
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         )
     """)
+
     conn.commit()
     conn.close()
 
 
 def get_setting(key: str, default: str) -> str:
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT value FROM settings WHERE key = ?", (key,))
-    row = c.fetchone()
+    conn = _conn()
+    cur = conn.cursor()
+
+    cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    row = cur.fetchone()
+
     conn.close()
     return row[0] if row else default
 
 
 def set_setting(key: str, value: str) -> None:
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
+    conn = _conn()
+    cur = conn.cursor()
+
+    cur.execute("""
         INSERT INTO settings (key, value)
         VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value=excluded.value
     """, (key, value))
-    conn.commit()
-    conn.close()
-
-    
 
     conn.commit()
     conn.close()
 
 
+# ===============================
+# VOTE RECORDING
+# ===============================
 def record_vote(car_id: int, branch: str, vote_amount: int, votes: int, stripe_session_id: str):
     """
-    Records a completed checkout session as ONE row (with the quantity stored in `votes`).
-    Uses stripe_session_id as UNIQUE to prevent double-counting if Stripe retries webhooks.
+    Records a completed checkout session as ONE row.
+    stripe_session_id is UNIQUE to prevent double-counting if Stripe retries webhooks.
     """
     conn = _conn()
     cur = conn.cursor()
@@ -82,21 +97,16 @@ def record_vote(car_id: int, branch: str, vote_amount: int, votes: int, stripe_s
         )
         conn.commit()
     except sqlite3.IntegrityError:
-        # Duplicate stripe_session_id: already recorded (safe to ignore)
+        # Duplicate stripe_session_id: already recorded
         pass
     finally:
         conn.close()
 
 
+# ===============================
+# TOTALS FOR LEADERBOARD
+# ===============================
 def get_totals() -> Dict[str, Dict[str, int]]:
-    """
-    Returns:
-      {
-        "Army": { "1": 10, "2": 3, ... },
-        "People’s Choice": { "12": 7, ... }
-      }
-    Keys are strings for easy use in Jinja templates.
-    """
     conn = _conn()
     cur = conn.cursor()
 
