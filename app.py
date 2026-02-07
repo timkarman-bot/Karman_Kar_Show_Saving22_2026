@@ -23,7 +23,7 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 # Config
-DEFAULT_get_max_cars() = int(os.getenv("get_max_cars()", "300"))
+DEFAULT_MAX_CARS = int(os.getenv("MAX_CARS", "300"))
 
 BRANCHES = [
     "Army",
@@ -99,11 +99,11 @@ def requires_veteran_attestation(branch: str) -> bool:
     return branch != PEOPLES_CHOICE
 
 # Added to manually enter the max number of cars
-def get_get_max_cars()() -> int:
+def get_max_cars():
     try:
-        return int(get_setting("get_max_cars()", str(DEFAULT_get_max_cars())))
+        return int(get_setting("max_cars", str(DEFAULT_MAX_CARS)))
     except Exception:
-        return DEFAULT_get_max_cars()
+        return DEFAULT_MAX_CARS
 
 
 # ===============================
