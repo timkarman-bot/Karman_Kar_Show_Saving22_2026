@@ -1,47 +1,66 @@
 {% extends "base.html" %}
-{% set title = "Register • " ~ show.title %}
+{% set title = "Register • " ~ show["title"] %}
 
 {% block content %}
-<div class="max-w-2xl">
-  <h1 class="text-3xl font-semibold tracking-tight">Show registration</h1>
-  <p class="mt-2 text-slate-600">Register your car for the show list (car number is required).</p>
+<div class="max-w-3xl">
+  <h1 class="text-3xl font-semibold tracking-tight">Car registration</h1>
+  <p class="mt-2 text-slate-600">Register so we can match winners to the right person and optionally notify you about future events.</p>
 
   {% if error %}
     <div class="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">{{ error }}</div>
   {% endif %}
 
   <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
-    <form method="POST" enctype="multipart/form-data" class="grid gap-4">
-      <div>
-        <label class="text-sm font-semibold">Car number *</label>
-        <input name="car_number" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., 112" required>
+    <form method="POST" class="grid gap-6">
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="text-sm font-semibold">Name *</label>
+          <input name="name" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold">Car number (this show) *</label>
+          <input name="car_number" inputmode="numeric" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., 12" required>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold">Phone *</label>
+          <input name="phone" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold">Email *</label>
+          <input name="email" type="email" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
       </div>
 
-      <div>
-        <label class="text-sm font-semibold">Name *</label>
-        <input name="owner_name" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., Tim Karman" required>
+      <div class="grid gap-4 md:grid-cols-3">
+        <div>
+          <label class="text-sm font-semibold">Year *</label>
+          <input name="year" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., 1977" required>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Make *</label>
+          <input name="make" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., MG" required>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Model *</label>
+          <input name="model" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., MGB" required>
+        </div>
       </div>
 
-      <div>
-        <label class="text-sm font-semibold">Make / Model *</label>
-        <input name="make_model" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., 1977 MGB" required>
-      </div>
+      <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <input type="checkbox" name="opt_in_future" class="mt-1">
+        <div>
+          <div class="font-semibold">Contact me about future events</div>
+          <div class="text-sm text-slate-600">Optional — check if you want updates for upcoming shows.</div>
+        </div>
+      </label>
 
-      <div>
-        <label class="text-sm font-semibold">Photo (optional)</label>
-        <input type="file" name="photo" accept="image/png,image/jpeg,image/webp" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
-        <div class="text-xs text-slate-500 mt-1">PNG, JPG, or WEBP. A photo looks great on the car list.</div>
-      </div>
-
-      <button class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90" type="submit">
-        Register car
+      <button class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90 w-fit" type="submit">
+        Submit registration
       </button>
     </form>
-  </div>
-
-  <div class="mt-5 flex gap-4 text-sm">
-    <a class="underline" href="/show/{{ show.slug }}/cars">View car list</a>
-    <a class="underline" href="/show/{{ show.slug }}/kiosk">Kiosk voting mode</a>
   </div>
 </div>
 {% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% set title = "Upcoming Events • Karman Kar Shows & Events" %}
+
+{% block content %}
+<div class="flex items-end justify-between gap-4">
+  <div>
+    <h1 class="text-3xl font-semibold tracking-tight">Upcoming events</h1>
+    <p class="mt-2 text-slate-600">What’s next for Karman Kar Shows & Events.</p>
+  </div>
+  {% if show %}
+    <a href="{{ url_for('show_page', slug=show['slug']) }}" class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90">Current show</a>
+  {% endif %}
+</div>
+
+<div class="mt-6 grid gap-4">
+  {% for e in events %}
+    <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div>
+        <div class="text-sm text-slate-500">{{ e.date }}</div>
+        <div class="text-xl font-semibold">{{ e.title }}</div>
+        <div class="text-sm text-slate-600 mt-1">{{ e.location }}</div>
+      </div>
+      <span class="text-xs px-3 py-1 rounded-full bg-slate-100 border border-slate-200 w-fit">{{ e.status }}</span>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}
