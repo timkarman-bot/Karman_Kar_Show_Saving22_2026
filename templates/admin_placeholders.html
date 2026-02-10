@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set title = "Placeholder Cars • Admin" %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="flex items-end justify-between gap-4">
+    <div>
+      <div class="text-xs font-semibold text-slate-500">RESTRICTED</div>
+      <h1 class="mt-1 text-3xl font-semibold tracking-tight">Placeholder Cars</h1>
+      <p class="mt-2 text-slate-600">Create pre-printed windshield cards before the show.</p>
+    </div>
+    <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+       href="{{ url_for('admin_page') }}">
+      Back to Admin
+    </a>
+  </div>
+
+  {% if error %}
+    <div class="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">{{ error }}</div>
+  {% endif %}
+  {% if success %}
+    <div class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">{{ success }}</div>
+  {% endif %}
+
+  <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <form method="POST" class="grid gap-5">
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="text-sm font-semibold">Start car number</label>
+          <input name="start_number" inputmode="numeric" value="1"
+                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">How many to create</label>
+          <input name="count" inputmode="numeric" value="300"
+                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+      </div>
+
+      <button class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90 w-fit" type="submit">
+        Create placeholder cars
+      </button>
+
+      <div class="text-xs text-slate-500">
+        Safe to run multiple times — existing car numbers for this show will be skipped.
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

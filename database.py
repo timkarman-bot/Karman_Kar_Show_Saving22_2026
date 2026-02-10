@@ -5,18 +5,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 DB_PATH = os.getenv("DB_PATH", "app.db")
 
-
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
-
 def init_db() -> None:
     conn = _conn()
     cur = conn.cursor()
 
-    # Shows (configurable; one can be active)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS shows (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +32,6 @@ def init_db() -> None:
         )
     """)
 
-    # People (registration contacts)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS people (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,7 +43,6 @@ def init_db() -> None:
         )
     """)
 
-    # Cars registered for a specific show (car number is per-show)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS show_cars (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +60,6 @@ def init_db() -> None:
         )
     """)
 
-    # Votes recorded after payment
     cur.execute("""
         CREATE TABLE IF NOT EXISTS votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,19 +78,13 @@ def init_db() -> None:
     conn.commit()
     conn.close()
 
-
 # ----------------------------
 # Shows
 # ----------------------------
 def ensure_default_show(default_show: Dict[str, Any]) -> None:
-    """
-    Ensures a default show exists (safe to run on every startup).
-    If no active show exists, sets this one active.
-    """
     conn = _conn()
     cur = conn.cursor()
 
-    # Insert if missing
     cur.execute("SELECT id FROM shows WHERE slug = ?", (default_show["slug"],))
     row = cur.fetchone()
     if not row:
@@ -117,7 +105,6 @@ def ensure_default_show(default_show: Dict[str, Any]) -> None:
             default_show.get("description"),
         ))
 
-    # If no active show, set default active
     cur.execute("SELECT id FROM shows WHERE is_active = 1 LIMIT 1")
     active = cur.fetchone()
     if not active:
@@ -127,14 +114,12 @@ def ensure_default_show(default_show: Dict[str, Any]) -> None:
     conn.commit()
     conn.close()
 
-
 def get_active_show() -> Optional[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
     row = cur.execute("SELECT * FROM shows WHERE is_active = 1 LIMIT 1").fetchone()
     conn.close()
     return row
-
 
 def get_show_by_slug(slug: str) -> Optional[sqlite3.Row]:
     conn = _conn()
@@ -143,7 +128,6 @@ def get_show_by_slug(slug: str) -> Optional[sqlite3.Row]:
     conn.close()
     return row
 
-
 def set_show_voting_open(show_id: int, voting_open: bool) -> None:
     conn = _conn()
     cur = conn.cursor()
@@ -151,14 +135,12 @@ def set_show_voting_open(show_id: int, voting_open: bool) -> None:
     conn.commit()
     conn.close()
 
-
 def toggle_show_voting(show_id: int) -> None:
     conn = _conn()
     cur = conn.cursor()
     cur.execute("UPDATE shows SET voting_open = CASE voting_open WHEN 1 THEN 0 ELSE 1 END WHERE id = ?", (show_id,))
     conn.commit()
     conn.close()
-
 
 # ----------------------------
 # Registration
@@ -175,11 +157,19 @@ def create_person(name: str, phone: str, email: str, opt_in_future: bool) -> int
     conn.close()
     return pid
 
+def update_person(person_id: int, name: str, phone: str, email: str, opt_in_future: bool) -> None:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE people
+        SET name = ?, phone = ?, email = ?, opt_in_future = ?
+        WHERE id = ?
+    """, (name, phone, email, 1 if opt_in_future else 0, person_id))
+    conn.commit()
+    conn.close()
 
 def _new_car_token() -> str:
-    # URL-safe token for QR; stable for the car in that show
     return secrets.token_urlsafe(12)
-
 
 def create_show_car(
     show_id: int,
@@ -189,14 +179,9 @@ def create_show_car(
     make: str,
     model: str,
 ) -> Tuple[int, str]:
-    """
-    Returns (show_car_id, car_token).
-    Ensures car_number is unique per show.
-    """
     conn = _conn()
     cur = conn.cursor()
 
-    # Generate token and insert
     token = _new_car_token()
     try:
         cur.execute("""
@@ -211,12 +196,27 @@ def create_show_car(
         conn.close()
         raise ValueError("That car number is already registered for this show.") from e
 
+def update_show_car_details(show_car_id: int, year: str, make: str, model: str) -> None:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE show_cars
+        SET year = ?, make = ?, model = ?
+        WHERE id = ?
+    """, (year, make, model, show_car_id))
+    conn.commit()
+    conn.close()
 
 def get_show_car_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
     row = cur.execute("""
-        SELECT sc.*, p.name as owner_name, p.phone as owner_phone, p.email as owner_email, p.opt_in_future
+        SELECT
+            sc.*,
+            p.name as owner_name,
+            p.phone as owner_phone,
+            p.email as owner_email,
+            p.opt_in_future
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ? AND sc.car_token = ?
@@ -225,6 +225,43 @@ def get_show_car_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]
     conn.close()
     return row
 
+# ----------------------------
+# Placeholder cars (pre-print)
+# ----------------------------
+def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
+    """
+    Creates placeholder cars with unique tokens for pre-printing.
+    Returns how many were created (skips car_numbers that already exist).
+    """
+    conn = _conn()
+    cur = conn.cursor()
+
+    created = 0
+    for n in range(start_number, start_number + count):
+        exists = cur.execute(
+            "SELECT 1 FROM show_cars WHERE show_id = ? AND car_number = ? LIMIT 1",
+            (show_id, n),
+        ).fetchone()
+        if exists:
+            continue
+
+        # placeholder person (FK required)
+        cur.execute(
+            "INSERT INTO people (name, phone, email, opt_in_future) VALUES (?, ?, ?, ?)",
+            ("", "", "", 0),
+        )
+        person_id = int(cur.lastrowid)
+
+        token = _new_car_token()
+        cur.execute("""
+            INSERT INTO show_cars (show_id, person_id, car_number, car_token, year, make, model)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (show_id, person_id, n, token, "TBD", "TBD", "TBD"))
+        created += 1
+
+    conn.commit()
+    conn.close()
+    return created
 
 # ----------------------------
 # Voting
@@ -237,10 +274,6 @@ def record_paid_votes(
     amount_cents: int,
     stripe_session_id: str
 ) -> None:
-    """
-    Records one Stripe session as one row (vote_qty can be > 1).
-    stripe_session_id UNIQUE prevents double counting.
-    """
     conn = _conn()
     cur = conn.cursor()
     try:
@@ -250,11 +283,9 @@ def record_paid_votes(
         """, (show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id))
         conn.commit()
     except sqlite3.IntegrityError:
-        # already recorded
         pass
     finally:
         conn.close()
-
 
 def reset_votes_for_show(show_id: int) -> None:
     conn = _conn()
@@ -262,7 +293,6 @@ def reset_votes_for_show(show_id: int) -> None:
     cur.execute("DELETE FROM votes WHERE show_id = ?", (show_id,))
     conn.commit()
     conn.close()
-
 
 def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
@@ -291,11 +321,7 @@ def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
     conn.close()
     return rows
 
-
 def leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int, int]]]:
-    """
-    Returns {category: [(car_number, total_votes), ...]} sorted desc.
-    """
     conn = _conn()
     cur = conn.cursor()
     rows = cur.execute("""
@@ -314,11 +340,7 @@ def leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int, int]]]:
         out[r["category"]].append((int(r["car_number"]), int(r["total_votes"] or 0)))
     return out
 
-
 def leaderboard_overall(show_id: int) -> List[Tuple[int, int]]:
-    """
-    Returns [(car_number, total_votes_all_categories), ...] sorted desc.
-    """
     conn = _conn()
     cur = conn.cursor()
     rows = cur.execute("""
