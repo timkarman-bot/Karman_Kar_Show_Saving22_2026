@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% set title = "Register • " ~ show["title"] %}
+{% set title = "Register • Karman Kar Shows & Events" %}
 
 {% block content %}
 <div class="max-w-3xl">
   <h1 class="text-3xl font-semibold tracking-tight">Car registration</h1>
-  <p class="mt-2 text-slate-600">Register so we can match winners to the right person and optionally notify you about future events.</p>
+  <p class="mt-2 text-slate-600">Required fields help match winners to the right person for this show.</p>
 
   {% if error %}
     <div class="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">{{ error }}</div>
@@ -19,7 +19,7 @@
         </div>
 
         <div>
-          <label class="text-sm font-semibold">Car number (this show) *</label>
+          <label class="text-sm font-semibold">Car number (for this show) *</label>
           <input name="car_number" inputmode="numeric" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., 12" required>
         </div>
 
@@ -53,7 +53,7 @@
         <input type="checkbox" name="opt_in_future" class="mt-1">
         <div>
           <div class="font-semibold">Contact me about future events</div>
-          <div class="text-sm text-slate-600">Optional — check if you want updates for upcoming shows.</div>
+          <div class="text-sm text-slate-600">Optional. You can opt in to get details about upcoming shows.</div>
         </div>
       </label>
 
