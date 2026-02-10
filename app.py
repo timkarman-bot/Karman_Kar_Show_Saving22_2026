@@ -1,376 +1,183 @@
 import os
-from datetime import datetime, timedelta
-
-import stripe
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session
+from database import init_db, record_vote, get_totals
 
-from database import (
-    init_db,
-    init_settings,
-    record_vote,
-    get_totals,
-    get_setting,
-    set_setting,
-)
+init_db()
 
-# ===============================
-# APP SETUP
-# ===============================
 app = Flask(__name__)
-
-# Flask session secret (NOT Stripe)
 app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
 
-# Admin password
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
 
-# Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+# ====== Simple show config ======
+CURRENT_SHOW = {
+    "slug": "karman-charity-show",
+    "title": "Karman Charity Car Show",
+    "date": "Saturday, April 26, 2026",
+    "time": "Cars arrive at 10:00 AM",
+    "location_name": "Children’s Mercy Park",
+    "address": "1 Sporting Way, Kansas City, KS 66111",
+    "benefiting": "Saving 22 / 22 Survivor Awareness",
+    "suggested_donation": "$35 suggested donation for show cars",
+    "description": "A charity car show supporting veteran suicide awareness with judged certificates by branch favorites and People’s Choice."
+}
 
-# Config
-DEFAULT_MAX_CARS = int(os.getenv("MAX_CARS", "300"))
-
-BRANCHES = [
-    "Army",
-    "Navy",
-    "Air Force",
-    "Marines",
-    "Coast Guard",
-    "Space Force",
-    "People’s Choice",
+UPCOMING_EVENTS = [
+    {
+        "date": "May 23, 2026",
+        "title": "Pop-Up Car Show (Certificates + People’s Choice)",
+        "location": "Kansas City Metro (TBD)",
+        "status": "Planning"
+    },
+    {
+        "date": "June 20, 2026",
+        "title": "Summer Cruise + Mini Show",
+        "location": "Liberty, MO (TBD)",
+        "status": "Planning"
+    },
 ]
-PEOPLES_CHOICE = "People’s Choice"
 
-# Voting lock controls (in-memory)
+# Voting lock controls (in-memory; resets on restart)
 VOTING_MANUALLY_LOCKED = False
-VOTING_END_DATETIME = None  # datetime(...)
-
-# Admin session settings
-ADMIN_SESSION_IDLE_MINUTES = 30
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
 
 
 # ===============================
-# INIT DB (once at startup)
+# GLOBAL TEMPLATE VARIABLES
 # ===============================
-init_db()
-init_settings()
 
-
-# ===============================
-# HELPERS
-# ===============================
-def get_max_cars() -> int:
-    """
-    Max cars is configurable from Admin.
-    Stored in DB settings table as key=max_cars.
-    Falls back to env var MAX_CARS (DEFAULT_MAX_CARS).
-    """
-    try:
-        return int(get_setting("max_cars", str(DEFAULT_MAX_CARS)))
-    except Exception:
-        return DEFAULT_MAX_CARS
-
-
-def voting_is_open() -> bool:
-    global VOTING_MANUALLY_LOCKED, VOTING_END_DATETIME
-    if VOTING_MANUALLY_LOCKED:
-        return False
-    if VOTING_END_DATETIME and datetime.now() > VOTING_END_DATETIME:
-        return False
-    return True
-
-
-def is_admin() -> bool:
-    if not session.get("admin"):
-        return False
-
-    last_seen = session.get("admin_last_seen")
-    if not last_seen:
-        return False
-
-    try:
-        last_seen_dt = datetime.fromisoformat(last_seen)
-    except Exception:
-        session.clear()
-        return False
-
-    if datetime.utcnow() - last_seen_dt > timedelta(minutes=ADMIN_SESSION_IDLE_MINUTES):
-        session.clear()
-        return False
-
-    session["admin_last_seen"] = datetime.utcnow().isoformat()
-    return True
-
-
-def admin_required():
-    if not is_admin():
-        return redirect(url_for("admin_login"))
-    return None
-
-
-def truthy_checkbox(val: str) -> bool:
-    return str(val).strip().lower() in {"1", "true", "yes", "on", "y"}
-
-
-def requires_veteran_attestation(branch: str) -> bool:
-    return branch != PEOPLES_CHOICE
+@app.context_processor
+def inject_show():
+    return {"show": CURRENT_SHOW}
 
 
 # ===============================
-# PUBLIC ROUTES
+# Website Pages
 # ===============================
-@app.route("/")
+
+@app.get("/")
 def home():
-    return render_template("home.html")
+    return render_template("home.html", show=CURRENT_SHOW)
 
+@app.get("/events")
+def events():
+    return render_template("events.html", show=CURRENT_SHOW, events=UPCOMING_EVENTS)
 
-@app.route("/vote/<int:car_id>")
-def vote(car_id):
-    if car_id < 1 or car_id > get_max_cars():
-        # nicer page (create templates/car_not_active.html)
-        return render_template("car_not_active.html"), 404
+@app.get("/show/<slug>")
+def show_page(slug):
+    if slug != CURRENT_SHOW["slug"]:
+        return render_template("show.html", show={**CURRENT_SHOW, "title": "Show Not Found"}, not_found=True)
+    return render_template("show.html", show=CURRENT_SHOW, not_found=False)
 
-    if not voting_is_open():
-        return render_template("voting_closed.html")
+@app.get("/show/<slug>/vote")
+def vote_page(slug):
+    if slug != CURRENT_SHOW["slug"]:
+        return redirect(url_for("show_page", slug=slug))
+    global VOTING_MANUALLY_LOCKED
+    return render_template("vote.html", show=CURRENT_SHOW, voting_locked=VOTING_MANUALLY_LOCKED)
 
-    return render_template("vote.html", car_id=car_id, branches=BRANCHES, error=None)
-
-
-@app.route("/create-checkout-session", methods=["POST"])
-def create_checkout_session():
-    if not voting_is_open():
-        return render_template("voting_closed.html"), 403
-
-    if not stripe.api_key:
-        return "Stripe not configured. Missing STRIPE_SECRET_KEY.", 500
-
-    try:
-        car_id = int(request.form.get("car_id", "0"))
-        branch = request.form.get("branch", "")
-        amount = int(request.form.get("amount", "0"))      # dollars per vote
-        quantity = int(request.form.get("quantity", "0"))  # number of votes
-    except ValueError:
-        return "Invalid form values", 400
-
-    is_veteran = truthy_checkbox(request.form.get("is_veteran", ""))
-    served_branch_confirm = truthy_checkbox(request.form.get("served_branch_confirm", ""))
-
-    if not (1 <= car_id <= get_max_cars()):
-        return "Invalid car id", 400
-    if branch not in BRANCHES:
-        return "Invalid category", 400
-
-    # Enforce $1 only
-    if amount != 1:
-        return "Invalid amount", 400
-
-    if quantity < 1 or quantity > 50:
-        return "Invalid vote quantity", 400
-
-    # Require veteran confirmation for branch categories (honor system)
-    if requires_veteran_attestation(branch):
-        if not is_veteran or not served_branch_confirm:
-            return render_template(
-                "vote.html",
-                car_id=car_id,
-                branches=BRANCHES,
-                error="Branch voting requires veteran confirmation. Please check both boxes, or select People’s Choice.",
-            ), 400
-
-    try:
-        session_obj = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            mode="payment",
-            line_items=[{
-                "price_data": {
-                    "currency": "usd",
-                    "product_data": {"name": f"Car {car_id} – {branch} Vote"},
-                    "unit_amount": 100,  # $1 in cents
-                },
-                "quantity": quantity,
-            }],
-            metadata={
-                "car_id": str(car_id),
-                "branch": branch,
-                "votes": str(quantity),
-                "vote_amount": "1",
-                "veteran_attested": "yes" if (is_veteran and served_branch_confirm) else "no",
-            },
-            success_url=url_for("success", _external=True),
-            cancel_url=url_for("vote", car_id=car_id, _external=True),
-        )
-        return redirect(session_obj.url)
-    except Exception as e:
-        return f"Stripe error: {e}", 500
-
-
-@app.route("/success")
-def success():
-    return render_template("success.html")
-
-
-@app.route("/health")
-def health():
-    return jsonify(status="ok")
+@app.get("/show/<slug>/leaderboard")
+def leaderboard_page(slug):
+    if slug != CURRENT_SHOW["slug"]:
+        return redirect(url_for("show_page", slug=slug))
+    totals = get_totals()
+    # sort high-to-low
+    totals_sorted = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
+    return render_template("leaderboard.html", show=CURRENT_SHOW, totals=totals_sorted)
 
 
 # ===============================
-# ADMIN AUTH ROUTES
+# Voting + Admin Endpoints
 # ===============================
-@app.route("/admin-login", methods=["GET", "POST"])
+
+@app.post("/api/vote")
+def api_vote():
+    global VOTING_MANUALLY_LOCKED
+    if VOTING_MANUALLY_LOCKED:
+        return jsonify({"ok": False, "error": "Voting is currently locked."}), 403
+
+    car_number = request.form.get("car_number", "").strip()
+    category = request.form.get("category", "").strip()
+
+    if not car_number or not category:
+        return jsonify({"ok": False, "error": "Missing car number or category."}), 400
+
+    # You likely already record votes by category/car.
+    # Adjust record_vote signature if yours differs.
+    record_vote(category=category, car_number=car_number)
+
+    return jsonify({"ok": True})
+
+@app.get("/admin")
+def admin_page():
+    if not session.get("admin_authed"):
+        return render_template("admin.html", show=CURRENT_SHOW, authed=False)
+    totals = get_totals()
+    totals_sorted = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
+    return render_template("admin.html", show=CURRENT_SHOW, authed=True, totals=totals_sorted, voting_locked=VOTING_MANUALLY_LOCKED)
+
+@app.post("/admin/login")
 def admin_login():
-    if not ADMIN_PASSWORD:
-        return "Admin login is not configured. Set ADMIN_PASSWORD in Railway Variables.", 500
+    pw = request.form.get("password", "")
+    if pw == ADMIN_PASSWORD:
+        session["admin_authed"] = True
+        return redirect(url_for("admin_page"))
+    return render_template("admin.html", show=CURRENT_SHOW, authed=False, login_error="Incorrect password.")
 
-    error = None
-    if request.method == "POST":
-        password = request.form.get("password", "")
-        if password == ADMIN_PASSWORD:
-            session["admin"] = True
-            session["admin_last_seen"] = datetime.utcnow().isoformat()
-            return redirect(url_for("admin"))
-        error = "Invalid password."
-
-    return render_template("admin_login.html", error=error)
-
-
-@app.route("/admin-logout")
+@app.post("/admin/logout")
 def admin_logout():
-    session.clear()
-    return redirect(url_for("home"))
+    session.pop("admin_authed", None)
+    return redirect(url_for("admin_page"))
 
-
-# ===============================
-# ADMIN ROUTES (PROTECTED)
-# ===============================
-@app.route("/admin")
-def admin():
-    resp = admin_required()
-    if resp:
-        return resp
-
-    return render_template(
-        "admin.html",
-        totals=get_totals(),
-        max_cars=get_max_cars(),
-        voting_open=voting_is_open(),
-        voting_end=VOTING_END_DATETIME,
-        voting_locked=VOTING_MANUALLY_LOCKED,
-        idle_minutes=ADMIN_SESSION_IDLE_MINUTES,
-    )
-
-
-@app.route("/leaderboard")
-def leaderboard():
-    resp = admin_required()
-    if resp:
-        return resp
-    return render_template("leaderboard.html", totals=get_totals())
-
-
-@app.route("/admin/set-max-cars", methods=["POST"])
-def admin_set_max_cars():
-    resp = admin_required()
-    if resp:
-        return resp
-
-    raw = request.form.get("max_cars", "").strip()
-    try:
-        value = int(raw)
-        if value < 1 or value > 2000:
-            return "Max cars must be between 1 and 2000.", 400
-    except ValueError:
-        return "Invalid number.", 400
-
-    set_setting("max_cars", str(value))
-    return redirect(url_for("admin"))
-
-
-@app.route("/admin/lock", methods=["POST"])
-def lock_voting():
-    resp = admin_required()
-    if resp:
-        return resp
-
+@app.post("/admin/toggle-voting")
+def admin_toggle_voting():
     global VOTING_MANUALLY_LOCKED
-    VOTING_MANUALLY_LOCKED = True
-    return redirect(url_for("admin"))
+    if not session.get("admin_authed"):
+        return redirect(url_for("admin_page"))
+    VOTING_MANUALLY_LOCKED = not VOTING_MANUALLY_LOCKED
+    return redirect(url_for("admin_page"))
+
+@app.post("/admin/reset-votes")
+def admin_reset_votes():
+    if not session.get("admin_authed"):
+        return redirect(url_for("admin_page"))
+    reset_votes()
+    return redirect(url_for("admin_page"))
+
+@app.get("/admin/export-votes.csv")
+def admin_export_votes():
+    if not session.get("admin_authed"):
+        return redirect(url_for("admin_page"))
+
+    rows = export_votes_rows()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["category", "car_number", "created_at"])
+    for r in rows:
+        w.writerow([r["category"], r["car_number"], r["created_at"]])
+
+    mem = io.BytesIO(buf.getvalue().encode("utf-8"))
+    mem.seek(0)
+    return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="votes_export.csv")
+
+@app.get("/admin/cars")
+def admin_cars():
+    if not session.get("admin_authed"):
+        return redirect(url_for("admin_page"))
+    cars = list_cars(active_only=False)
+    return render_template("admin_cars.html", show=CURRENT_SHOW, cars=cars)
+
+@app.post("/admin/cars/toggle")
+def admin_cars_toggle():
+    if not session.get("admin_authed"):
+        return redirect(url_for("admin_page"))
+    car_number = request.form.get("car_number", "").strip()
+    desired = request.form.get("is_active", "1") == "1"
+    if car_number:
+        set_car_active(car_number, desired)
+    return redirect(url_for("admin_cars"))
 
 
-@app.route("/admin/unlock", methods=["POST"])
-def unlock_voting():
-    resp = admin_required()
-    if resp:
-        return resp
-
-    global VOTING_MANUALLY_LOCKED
-    VOTING_MANUALLY_LOCKED = False
-    return redirect(url_for("admin"))
-
-
-@app.route("/admin/set-end-time", methods=["POST"])
-def set_end_time():
-    resp = admin_required()
-    if resp:
-        return resp
-
-    global VOTING_END_DATETIME
-    end_time_str = request.form.get("end_time", "").strip()
-    if not end_time_str:
-        return redirect(url_for("admin"))
-
-    try:
-        VOTING_END_DATETIME = datetime.fromisoformat(end_time_str)
-    except Exception:
-        return "Invalid datetime format", 400
-
-    return redirect(url_for("admin"))
-
-
-# ===============================
-# STRIPE WEBHOOK (RECORD VOTES)
-# ===============================
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    if not STRIPE_WEBHOOK_SECRET:
-        return "Webhook not configured. Set STRIPE_WEBHOOK_SECRET.", 501
-
-    payload = request.data
-    sig_header = request.headers.get("Stripe-Signature", "")
-
-    try:
-        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
-    except Exception:
-        return "Invalid webhook signature", 400
-
-    if event["type"] == "checkout.session.completed":
-        session_obj = event["data"]["object"]
-        md = session_obj.get("metadata", {})
-
-        try:
-            car_id = int(md.get("car_id", "0"))
-            branch = md.get("branch", "")
-            votes = int(md.get("votes", "0"))
-            vote_amount = int(md.get("vote_amount", "0"))
-            stripe_session_id = session_obj.get("id", "")
-        except Exception:
-            return "", 200
-
-        if (
-            1 <= car_id <= get_max_cars()
-            and branch in BRANCHES
-            and votes > 0
-            and vote_amount == 1
-        ):
-            record_vote(car_id, branch, vote_amount, votes, stripe_session_id)
-
-    return "", 200
-
-
-# ===============================
-# RUN LOCAL (Railway ignores this)
-# ===============================
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)

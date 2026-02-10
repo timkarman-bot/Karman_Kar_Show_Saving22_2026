@@ -1,33 +1,62 @@
 {% extends "base.html" %}
-{% block content %}
+{% set title = "Home • Karman Kar Shows & Events" %}
 
-<div class="hero">
-    <!-- Logo placeholder -->
-    <div class="logo-placeholder">
-        KarmanKarShowsLogo
+{% block content %}
+<section class="grid gap-6 md:grid-cols-2 items-start">
+  <div class="rounded-3xl p-8 glass border border-slate-200 shadow-sm">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 text-white text-xs">
+      Current Featured Event
+    </div>
+    <h1 class="mt-4 text-4xl font-semibold tracking-tight">{{ show.title }}</h1>
+    <p class="mt-3 text-slate-700">
+      {{ show.description }}
+    </p>
+
+    <div class="mt-6 grid gap-3 text-sm">
+      <div class="flex gap-2"><span class="font-semibold w-24">Date:</span> <span>{{ show.date }}</span></div>
+      <div class="flex gap-2"><span class="font-semibold w-24">Time:</span> <span>{{ show.time }}</span></div>
+      <div class="flex gap-2"><span class="font-semibold w-24">Location:</span>
+        <span>{{ show.location_name }} • {{ show.address }}</span>
+      </div>
+      <div class="flex gap-2"><span class="font-semibold w-24">Benefiting:</span> <span>{{ show.benefiting }}</span></div>
+      <div class="flex gap-2"><span class="font-semibold w-24">Donation:</span> <span>{{ show.suggested_donation }}</span></div>
     </div>
 
-    <h1>Karman Kar Shows & Events</h1>
+    <div class="mt-8 flex flex-wrap gap-3">
+      <a href="/show/{{ show.slug }}" class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90">
+        View current show
+      </a>
+      <a href="/show/{{ show.slug }}/vote" class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50">
+        Vote now
+      </a>
+      <a href="/events" class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50">
+        Upcoming events
+      </a>
+    </div>
+  </div>
 
-    <p>
-        We organize car shows for fun, community, and causes that matter.
-        Our events range from traditional car meets to pop-up charity shows
-        supporting veterans, nonprofits, and local initiatives.
-    </p>
-</div>
+  <div class="rounded-3xl p-8 border border-slate-200 bg-white shadow-sm">
+    <h2 class="text-xl font-semibold">What to expect</h2>
+    <div class="mt-4 grid gap-4">
+      <div class="rounded-2xl border border-slate-200 p-4">
+        <div class="font-semibold">Simple + fun voting</div>
+        <div class="text-sm text-slate-600 mt-1">Vote by car number and category, then watch results on the live leaderboard.</div>
+      </div>
+      <div class="rounded-2xl border border-slate-200 p-4">
+        <div class="font-semibold">Branch favorites + People’s Choice</div>
+        <div class="text-sm text-slate-600 mt-1">Recognize favorites across all branches of service and a People’s Choice winner.</div>
+      </div>
+      <div class="rounded-2xl border border-slate-200 p-4">
+        <div class="font-semibold">Community impact</div>
+        <div class="text-sm text-slate-600 mt-1">Proceeds help support awareness and resources connected to veteran suicide prevention.</div>
+      </div>
+    </div>
 
-<hr>
-
-<h2>Current Event</h2>
-
-<p>
-    <strong>Save 22 Veterans Pop-Up Car Show</strong><br>
-    Vote for your favorite cars by military branch.
-    Every vote supports veteran suicide prevention.
-</p>
-
-<p>
-    Scan a car’s QR code or visit the car’s voting page to participate.
-</p>
-
+    <div class="mt-6 rounded-2xl bg-slate-50 border border-slate-200 p-4">
+      <div class="text-sm text-slate-600">
+        Want to sponsor a future show? Put your Title Sponsor logo at the top of this site and on event materials.
+      </div>
+    </div>
+  </div>
+</section>
 {% endblock %}

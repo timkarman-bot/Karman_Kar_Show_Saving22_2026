@@ -1,20 +1,70 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Karman Kar Shows & Events</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title or "Karman Kar Shows & Events" }}</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Optional: soft background pattern -->
+  <style>
+    .glass { background: rgba(255,255,255,.72); backdrop-filter: blur(10px); }
+  </style>
 </head>
-<body>
 
-<nav>
-    <a href="/">Home</a>
-    <a href="/admin">Admin</a>
-</nav>
+<body class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900">
+  <header class="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+    <div class="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-2xl bg-slate-900 text-white grid place-items-center font-bold">K</div>
+        <div>
+          <div class="font-semibold leading-tight">Karman Kar Shows & Events</div>
+          <div class="text-xs text-slate-500 -mt-0.5">Charity • Community • Veterans</div>
+        </div>
 
-<div class="container">
+
+
+      </a>
+
+<a href="/" class="flex items-center gap-3">
+  <img
+    src="{{ url_for('static', filename='img/karmankarshows-logo.png') }}"
+    alt="Karman Kar Shows & Events"
+    class="h-10 w-auto"
+  />
+  <div class="hidden sm:block">
+    <div class="font-semibold leading-tight">Karman Kar Shows & Events</div>
+    <div class="text-xs text-slate-500 -mt-0.5">Charity • Community • Veterans</div>
+  </div>
+</a>
+
+
+
+
+      <nav class="flex items-center gap-2 text-sm">
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="/">Home</a>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="/show/{{ show.slug }}">Current Show</a>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="/show/{{ show.slug }}">Cars</a>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="/show/{{ show.slug }}">register</a>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="/show/{{ show.slug }}">kiosk</a>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="/events">Upcoming Events</a>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="/show/{{ show.slug }}/leaderboard">Leaderboard</a>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="/admin">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-10">
     {% block content %}{% endblock %}
-</div>
+  </main>
 
+  <footer class="border-t border-slate-200/70 bg-white/70">
+    <div class="mx-auto max-w-6xl px-4 py-8 text-sm text-slate-600 flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
+      <div>© {{ 2026 }} Karman Kar Shows & Events</div>
+      <div class="text-slate-500">Built for a cause • Respectfully supporting veterans and families</div>
+    </div>
+  </footer>
 </body>
 </html>

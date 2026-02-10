@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set title = "Car List • " ~ show.title %}
+
+{% block content %}
+<div class="flex items-end justify-between gap-4">
+  <div>
+    <h1 class="text-3xl font-semibold tracking-tight">Car list</h1>
+    <p class="mt-2 text-slate-600">Registered cars for this show.</p>
+  </div>
+  <a class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90" href="/show/{{ show.slug }}/register">Register</a>
+</div>
+
+<div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  {% for c in cars %}
+    <div class="rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+      {% if c.photo_filename %}
+        <img src="{{ url_for('static', filename='uploads/' ~ c.photo_filename) }}" class="w-full h-48 object-cover" alt="Car {{ c.car_number }}">
+      {% else %}
+        <div class="w-full h-48 bg-slate-100 grid place-items-center text-slate-500 text-sm">No photo</div>
+      {% endif %}
+      <div class="p-5">
+        <div class="flex items-center justify-between">
+          <div class="text-xs text-slate-500">Car #</div>
+          <div class="text-xl font-semibold tabular-nums">{{ c.car_number }}</div>
+        </div>
+        <div class="mt-2 font-semibold">{{ c.make_model }}</div>
+        <div class="text-sm text-slate-600">{{ c.owner_name }}</div>
+        <div class="mt-4 flex gap-2">
+          <a class="flex-1 text-center px-4 py-2 rounded-2xl bg-slate-900 text-white hover:opacity-90"
+             href="/show/{{ show.slug }}/kiosk#car-{{ c.car_number }}">Vote</a>
+          <a class="flex-1 text-center px-4 py-2 rounded-2xl border border-slate-200 hover:bg-slate-50"
+             href="/show/{{ show.slug }}/leaderboard">Leaderboard</a>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

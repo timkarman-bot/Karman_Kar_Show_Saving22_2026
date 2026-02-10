@@ -34,6 +34,22 @@
 <a href="/admin-logout">Logout</a>
 <hr>
 
+<div class="mt-4 flex flex-wrap gap-3">
+  <form method="POST" action="/admin/reset-votes" onsubmit="return confirm('Reset ALL votes? This cannot be undone.');">
+    <button class="px-4 py-2 rounded-xl border border-red-200 text-red-700 hover:bg-red-50" type="submit">
+      Reset votes
+    </button>
+  </form>
+
+  <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" href="/admin/export-votes.csv">
+    Export votes CSV
+  </a>
+
+  <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" href="/admin/cars">
+    Manage cars
+  </a>
+</div>
+
 <h2>Live Vote Totals</h2>
 
 <table>

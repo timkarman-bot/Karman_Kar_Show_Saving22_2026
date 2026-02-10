@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% set title = "Kiosk Vote • " ~ show.title %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <h1 class="text-3xl font-semibold tracking-tight">Kiosk voting</h1>
+  <p class="mt-2 text-slate-600">Fast, big-button voting for phones and tablets at the show.</p>
+
+  <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="grid gap-4">
+      <div>
+        <label class="text-sm font-semibold">Select car</label>
+        <select id="car" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-4 text-lg">
+          <option value="">Choose…</option>
+          {% for c in cars %}
+            <option value="{{ c.car_number }}">#{{ c.car_number }} — {{ c.make_model }} ({{ c.owner_name }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <div class="text-sm font-semibold mb-2">Select category</div>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {% for cat in ["Army","Navy","Air Force","Marines","Coast Guard","Space Force","People’s Choice"] %}
+            <button class="cat px-4 py-6 rounded-3xl border border-slate-200 text-lg font-semibold hover:bg-slate-50"
+                    data-cat="{{ cat }}">{{ cat }}</button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div id="msg" class="text-base"></div>
+    </div>
+  </div>
+
+  <div class="mt-5 flex gap-4 text-sm">
+    <a class="underline" href="/show/{{ show.slug }}/leaderboard">Leaderboard</a>
+    <a class="underline" href="/show/{{ show.slug }}/cars">Car list</a>
+  </div>
+</div>
+
+<script>
+  const carSel = document.getElementById("car");
+  const msg = document.getElementById("msg");
+
+  async function submitVote(category) {
+    msg.textContent = "";
+    const car = carSel.value;
+
+    if (!car) {
+      msg.className = "text-base text-red-700";
+      msg.textContent = "Choose a car number first.";
+      return;
+    }
+
+    const data = new FormData();
+    data.append("car_number", car);
+    data.append("category", category);
+
+    try {
+      const res = await fetch("/api/vote", { method: "POST", body: data });
+      const json = await res.json();
+
+      if (!json.ok) {
+        msg.className = "text-base text-red-700";
+        msg.textContent = json.error || "Vote failed.";
+        return;
+      }
+
+      msg.className = "text-base text-green-700";
+      msg.textContent = `Vote submitted for car #${car} — ${category}.`;
+      // keep car selected so next person can vote quickly
+    } catch (e) {
+      msg.className = "text-base text-red-700";
+      msg.textContent = "Network error. Try again.";
+    }
+  }
+
+  document.querySelectorAll(".cat").forEach(btn => {
+    btn.addEventListener("click", () => submitVote(btn.dataset.cat));
+  });
+</script>
+{% endblock %}

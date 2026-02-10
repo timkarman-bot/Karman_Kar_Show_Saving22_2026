@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% set title = "Admin Cars • " ~ show.title %}
+
+{% block content %}
+<h1 class="text-3xl font-semibold tracking-tight">Admin • Cars</h1>
+<p class="mt-2 text-slate-600">Activate/deactivate cars for the public list and kiosk voting.</p>
+
+<div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+  <div class="grid gap-2">
+    {% for c in cars %}
+      <div class="flex items-center justify-between rounded-2xl border border-slate-200 p-3">
+        <div>
+          <div class="font-semibold">#{{ c.car_number }} — {{ c.make_model }}</div>
+          <div class="text-sm text-slate-600">{{ c.owner_name }}</div>
+        </div>
+
+        <form method="POST" action="/admin/cars/toggle" class="flex items-center gap-2">
+          <input type="hidden" name="car_number" value="{{ c.car_number }}">
+          {% if c.is_active %}
+            <input type="hidden" name="is_active" value="0">
+            <button class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" type="submit">Deactivate</button>
+          {% else %}
+            <input type="hidden" name="is_active" value="1">
+            <button class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90" type="submit">Activate</button>
+          {% endif %}
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="mt-6 flex gap-3">
+    <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" href="/admin">Back to admin</a>
+    <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" href="/show/{{ show.slug }}/kiosk">Open kiosk</a>
+  </div>
+</div>
+{% endblock %}
