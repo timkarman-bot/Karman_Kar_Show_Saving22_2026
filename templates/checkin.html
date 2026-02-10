@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% set title = "Check-In • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-semibold tracking-tight">Car Check-In</h1>
+        <div class="mt-1 text-slate-600 text-sm">
+          Car <span class="font-semibold">#{{ car["car_number"] }}</span> • {{ car["year"] }} {{ car["make"] }} {{ car["model"] }}
+        </div>
+        <div class="mt-1 text-xs text-slate-500">
+          Show: {{ show["title"] }}
+        </div>
+      </div>
+      {% if saved %}
+        <div class="px-3 py-1 rounded-full bg-emerald-600 text-white text-xs">Saved</div>
+      {% endif %}
+    </div>
+
+    {% if error %}
+      <div class="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">{{ error }}</div>
+    {% endif %}
+
+    {% if saved %}
+      <div class="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+        Check-in saved. You can hand them the windshield card.
+      </div>
+    {% else %}
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-700 text-sm">
+        Scan the windshield card’s <strong>CHECK-IN</strong> QR to land here. Fill this form once per car.
+      </div>
+    {% endif %}
+
+    <form method="POST" class="mt-6 grid gap-6">
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="text-sm font-semibold">Name *</label>
+          <input name="name" value="{{ car['owner_name'] }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold">Phone *</label>
+          <input name="phone" value="{{ car['owner_phone'] }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="text-sm font-semibold">Email *</label>
+          <input name="email" type="email" value="{{ car['owner_email'] }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-3">
+        <div>
+          <label class="text-sm font-semibold">Year *</label>
+          <input name="year" value="{{ car['year'] }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Make *</label>
+          <input name="make" value="{{ car['make'] }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Model *</label>
+          <input name="model" value="{{ car['model'] }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+      </div>
+
+      <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <input type="checkbox" name="opt_in_future" class="mt-1" {% if car["opt_in_future"] %}checked{% endif %}>
+        <div>
+          <div class="font-semibold">Contact me about future events</div>
+          <div class="text-sm text-slate-600">Optional. Opt in to receive updates.</div>
+        </div>
+      </label>
+
+      <div class="flex flex-wrap gap-3">
+        <button class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90" type="submit">
+          Save check-in
+        </button>
+
+        <a class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50"
+           href="{{ url_for('show_page', slug=show['slug']) }}">
+          Back to show
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
