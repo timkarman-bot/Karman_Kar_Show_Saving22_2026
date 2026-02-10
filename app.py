@@ -231,7 +231,7 @@ def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
     )
 
 
-@app.post("/create-checkout-session")
+@app.post("/create-chec@app.post("/create-checkout-session")
 def create_checkout_session():
     _require_stripe()
 
@@ -262,8 +262,13 @@ def create_checkout_session():
     if vote_qty < 1 or vote_qty > 50:
         return jsonify({"ok": False, "error": "Vote quantity must be between 1 and 50."}), 400
 
-   success_url = _abs_url("vote_success") + "?session_id={CHECKOUT_SESSION_ID}"
-   cancel_url = _abs_url("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug)
+    success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}"
+    cancel_url = _abs_url(url_for(
+        "vote_qty_page",
+        show_slug=show_slug,
+        car_token=car_token,
+        category_slug=category_slug
+    ))
 
     session_obj = stripe.checkout.Session.create(
         mode="payment",
@@ -289,7 +294,6 @@ def create_checkout_session():
     )
 
     return jsonify({"ok": True, "checkout_url": session_obj.url})
-
 
 @app.get("/success")
 def vote_success():
