@@ -308,15 +308,21 @@ def create_checkout_session():
         return jsonify({"ok": False, "error": "Vote quantity must be between 1 and 50."}), 400
 
     success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}"
-    cancel_url = _abs_url(url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug))
-
+    cancel_url = _abs_url(
+        url_for(
+            "vote_qty_page",
+            show_slug=show_slug,
+            car_token=car_token,
+            category_slug=category_slug
+        )
+    )
+    
 #-------------------
 # to test stripe 
 #-------------------
 
 print("SUCCESS_URL:", success_url)
 print("CANCEL_URL:", cancel_url)
-
 
     session_obj = stripe.checkout.Session.create(
         mode="payment",
