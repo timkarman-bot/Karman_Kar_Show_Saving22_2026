@@ -225,6 +225,30 @@ def get_show_car_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]
     conn.close()
     return row
 
+#-----------------------------
+# Public Safe
+#-----------------------------
+
+def get_public_show_car_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]:
+    """
+    Public-safe car lookup: includes owner_name only (no phone/email).
+    """
+    conn = _conn()
+    cur = conn.cursor()
+    row = cur.execute("""
+        SELECT
+            sc.*,
+            p.name as owner_name
+        FROM show_cars sc
+        JOIN people p ON p.id = sc.person_id
+        WHERE sc.show_id = ? AND sc.car_token = ?
+        LIMIT 1
+    """, (show_id, car_token)).fetchone()
+    conn.close()
+    return row
+
+
+
 # ----------------------------
 # Placeholder cars (pre-print)
 # ----------------------------
