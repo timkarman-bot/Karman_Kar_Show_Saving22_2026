@@ -321,8 +321,8 @@ def create_checkout_session():
 # to test stripe 
 #-------------------
 
-print("SUCCESS_URL:", success_url)
-print("CANCEL_URL:", cancel_url)
+    print("SUCCESS_URL:", success_url)
+    print("CANCEL_URL:", cancel_url)
 
     session_obj = stripe.checkout.Session.create(
         mode="payment",
