@@ -1,13 +1,21 @@
+# app.py (clean copy)
 import os
 import io
 import csv
-from typing import Dict, Optional
-from flask import Response
+from typing import Dict
 
 import stripe
 from flask import (
-    Flask, render_template, request, redirect, url_for,
-    jsonify, session, send_file, abort, flash
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    jsonify,
+    session,
+    send_file,
+    abort,
+    flash,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -26,7 +34,6 @@ from database import (
     update_show_car_details,
     get_show_car_public_by_token,
     get_show_car_private_by_token,
-    get_show_car_by_number,
     # voting
     record_paid_votes,
     reset_votes_for_show,
@@ -43,6 +50,8 @@ from database import (
     remove_sponsor_from_show,
     set_title_sponsor,
 )
+
+from functools import wraps
 
 # ----------------------------
 # BASIC CONFIG
@@ -83,8 +92,18 @@ DEFAULT_SHOW = {
 }
 
 UPCOMING_EVENTS = [
-    {"date": "May 23, 2026", "title": "Pop-Up Car Show (Certificates + People’s Choice)", "location": "Kansas City Metro (TBD)", "status": "Planning"},
-    {"date": "June 20, 2026", "title": "Summer Cruise + Mini Show", "location": "Liberty, MO (TBD)", "status": "Planning"},
+    {
+        "date": "May 23, 2026",
+        "title": "Pop-Up Car Show (Certificates + People’s Choice)",
+        "location": "Kansas City Metro (TBD)",
+        "status": "Planning",
+    },
+    {
+        "date": "June 20, 2026",
+        "title": "Summer Cruise + Mini Show",
+        "location": "Liberty, MO (TBD)",
+        "status": "Planning",
+    },
 ]
 
 # ----------------------------
@@ -96,12 +115,20 @@ ensure_default_show(DEFAULT_SHOW)
 # ----------------------------
 # HELPERS
 # ----------------------------
-def _require_admin() -> bool:
-    return bool(session.get("admin_authed"))
+def require_admin(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        if not session.get("admin_authed"):
+            return redirect(url_for("admin_page", next=request.path))
+        return view_func(*args, **kwargs)
+
+    return wrapped
+
 
 def _require_stripe():
     if not stripe.api_key:
         abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY in Railway variables.")
+
 
 def _abs_url(path: str) -> str:
     """
@@ -111,17 +138,16 @@ def _abs_url(path: str) -> str:
         return BASE_URL.rstrip("/") + path
     return request.url_root.rstrip("/") + path
 
+
 # ----------------------------
 # GLOBAL TEMPLATE VARS
 # ----------------------------
-@app.context_processor
 @app.context_processor
 def inject_globals():
     show = get_active_show()
     title_sponsor, sponsors = (None, [])
     if show:
-        result = get_show_sponsors(int(show["id"])) or (None, [])
-        title_sponsor, sponsors = result
+        title_sponsor, sponsors = (get_show_sponsors(int(show["id"])) or (None, []))
 
     return {
         "active_show": show,
@@ -131,6 +157,7 @@ def inject_globals():
         "sponsors": sponsors,
         "is_admin": session.get("admin_authed", False),
     }
+
 
 # ----------------------------
 # PUBLIC PAGES
@@ -142,10 +169,12 @@ def home():
         return "No active show configured.", 500
     return render_template("home.html", show=show)
 
+
 @app.get("/events")
 def events():
     show = get_active_show()
     return render_template("events.html", show=show, events=UPCOMING_EVENTS)
+
 
 @app.get("/show/<slug>")
 def show_page(slug: str):
@@ -154,6 +183,7 @@ def show_page(slug: str):
         return render_template("show.html", show={"title": "Show Not Found"}, not_found=True)
     cars = list_show_cars_public(int(show["id"]))
     return render_template("show.html", show=show, cars=cars, not_found=False)
+
 
 # ----------------------------
 # REGISTRATION (direct registration)
@@ -165,6 +195,7 @@ def register_page():
         return "No active show configured.", 500
     return render_template("register.html", show=show)
 
+
 @app.post("/register")
 def register_submit():
     show = get_active_show()
@@ -174,7 +205,7 @@ def register_submit():
     name = request.form.get("name", "").strip()
     phone = request.form.get("phone", "").strip()
     email = request.form.get("email", "").strip()
-    opt_in_future = (request.form.get("opt_in_future", "") == "on")
+    opt_in_future = request.form.get("opt_in_future", "") == "on"
 
     car_number_raw = request.form.get("car_number", "").strip()
     year = request.form.get("year", "").strip()
@@ -207,8 +238,9 @@ def register_submit():
 
     return redirect(url_for("registration_complete", show_slug=show["slug"], car_token=car_token))
 
+
 # ----------------------------
-# PRINT / WINDSHIELD CARDS (public page to print)
+# PRINT / WINDSHIELD CARDS
 # ----------------------------
 @app.get("/r/<show_slug>/<car_token>")
 def registration_complete(show_slug: str, car_token: str):
@@ -222,9 +254,9 @@ def registration_complete(show_slug: str, car_token: str):
 
     return render_template("registration_complete.html", show=show, car=car)
 
+
 # ----------------------------
 # OWNER CHECK-IN (preprinted workflow)
-# /checkin/<show_slug>/<car_token>
 # ----------------------------
 @app.get("/checkin/<show_slug>/<car_token>")
 def checkin_page(show_slug: str, car_token: str):
@@ -236,8 +268,8 @@ def checkin_page(show_slug: str, car_token: str):
     if not car_private:
         return "Car not found.", 404
 
-    # If placeholder, owner_name may be empty and year/make/model may be TBD
     return render_template("checkin.html", show=show, car=car_private)
+
 
 @app.post("/checkin/<show_slug>/<car_token>")
 def checkin_submit(show_slug: str, car_token: str):
@@ -252,7 +284,7 @@ def checkin_submit(show_slug: str, car_token: str):
     name = request.form.get("name", "").strip()
     phone = request.form.get("phone", "").strip()
     email = request.form.get("email", "").strip()
-    opt_in_future = (request.form.get("opt_in_future", "") == "on")
+    opt_in_future = request.form.get("opt_in_future", "") == "on"
 
     year = request.form.get("year", "").strip()
     make = request.form.get("make", "").strip()
@@ -276,13 +308,12 @@ def checkin_submit(show_slug: str, car_token: str):
         model=model,
     )
 
-    # Reload and show success
     car_private2 = get_show_car_private_by_token(int(show["id"]), car_token)
     return render_template("checkin.html", show=show, car=car_private2, success="Check-in complete. You're all set!")
 
+
 # ----------------------------
 # QR VOTING (CATEGORY LOCKED)
-# /v/<show_slug>/<car_token>/<category_slug>
 # ----------------------------
 @app.get("/v/<show_slug>/<car_token>/<category_slug>")
 def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
@@ -307,8 +338,9 @@ def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
         car=car,
         category_slug=category_slug,
         category_name=category_name,
-        vote_price_cents=VOTE_PRICE_CENTS
+        vote_price_cents=VOTE_PRICE_CENTS,
     )
+
 
 @app.post("/create-checkout-session")
 def create_checkout_session():
@@ -342,21 +374,25 @@ def create_checkout_session():
         return jsonify({"ok": False, "error": "Vote quantity must be between 1 and 50."}), 400
 
     success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}"
-    cancel_url = _abs_url(url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug))
+    cancel_url = _abs_url(
+        url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug)
+    )
 
     session_obj = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],
-        line_items=[{
-            "price_data": {
-                "currency": "usd",
-                "unit_amount": VOTE_PRICE_CENTS,
-                "product_data": {
-                    "name": f"Vote – {CATEGORY_SLUGS[category_slug]} (Car #{car['car_number']})"
+        line_items=[
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": VOTE_PRICE_CENTS,
+                    "product_data": {
+                        "name": f"Vote – {CATEGORY_SLUGS[category_slug]} (Car #{car['car_number']})"
+                    },
                 },
-            },
-            "quantity": vote_qty,
-        }],
+                "quantity": vote_qty,
+            }
+        ],
         success_url=success_url,
         cancel_url=cancel_url,
         metadata={
@@ -368,6 +404,7 @@ def create_checkout_session():
     )
 
     return jsonify({"ok": True, "checkout_url": session_obj.url})
+
 
 @app.get("/success")
 def vote_success():
@@ -401,145 +438,117 @@ def vote_success():
 
     return render_template("vote_success.html")
 
+
 # ----------------------------
-# ADMIN (RESTRICTED)
+# ADMIN
 # ----------------------------
 @app.get("/admin")
 def admin_page():
     show = get_active_show()
+    next_url = request.args.get("next", "")
     if not session.get("admin_authed"):
-        return render_template("admin.html", show=show, authed=False)
-    return render_template("admin.html", show=show, authed=True)
-
-@app.get("/admin/export-snapshot.zip")
-def admin_export_snapshot_zip():
-    if not session.get("admin_authed"):
-        return redirect(url_for("admin_page"))
-
-    show = get_active_show()
-    if not show:
-        return "No active show.", 500
-
-    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
-
-    return send_file(
-        io.BytesIO(zip_bytes),
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=filename
-    )
-
-
-@app.post("/admin/close-voting-and-export")
-def admin_close_voting_and_export():
-    """
-    One-click: closes voting and downloads a snapshot ZIP immediately.
-    """
-    if not session.get("admin_authed"):
-        return redirect(url_for("admin_page"))
-
-    show = get_active_show()
-    if not show:
-        return "No active show.", 500
-
-    # Close voting first
-    set_show_voting_open(int(show["id"]), False)
-
-    # Then export snapshot
-    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
-
-    return send_file(
-        io.BytesIO(zip_bytes),
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=filename
-    )
+        return render_template("admin.html", show=show, authed=False, next=next_url)
+    return render_template("admin.html", show=show, authed=True, next=next_url)
 
 
 @app.post("/admin/login")
 def admin_login():
     pw = request.form.get("password", "")
+    next_url = request.form.get("next", "") or url_for("admin_page")
     show = get_active_show()
+
     if pw == ADMIN_PASSWORD:
         session["admin_authed"] = True
-        return redirect(url_for("admin_page"))
-    return render_template("admin.html", show=show, authed=False, login_error="Incorrect password.")
+        return redirect(next_url)
+
+    return render_template("admin.html", show=show, authed=False, login_error="Incorrect password.", next=next_url)
+
 
 @app.post("/admin/logout")
+@require_admin
 def admin_logout():
     session.pop("admin_authed", None)
     return redirect(url_for("admin_page"))
 
 
+@app.get("/admin/export-snapshot.zip")
+@require_admin
+def admin_export_snapshot_zip():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
+    return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+
+
+@app.post("/admin/close-voting-and-export")
+@require_admin
+def admin_close_voting_and_export():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    set_show_voting_open(int(show["id"]), False)
+    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
+    return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+
 
 @app.post("/admin/toggle-voting")
+@require_admin
 def admin_toggle_voting():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
     show = get_active_show()
     if show:
         toggle_show_voting(int(show["id"]))
     return redirect(url_for("admin_page"))
 
+
 @app.post("/admin/open-voting")
+@require_admin
 def admin_open_voting():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
     show = get_active_show()
     if show:
         set_show_voting_open(int(show["id"]), True)
     return redirect(url_for("admin_page"))
 
+
 @app.post("/admin/close-voting")
+@require_admin
 def admin_close_voting():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
     show = get_active_show()
     if show:
         set_show_voting_open(int(show["id"]), False)
     return redirect(url_for("admin_page"))
 
-@app.post("/admin/reset-votes")
-def admin_reset_votes():
-    if not session.get("admin_authed"):
-        return redirect(url_for("admin_page"))
 
+@app.post("/admin/reset-votes")
+@require_admin
+def admin_reset_votes():
     show = get_active_show()
     if not show:
         return "No active show.", 500
 
-    # Export first (download)
     zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
-
-    # Then reset votes
     reset_votes_for_show(int(show["id"]))
 
-    return send_file(
-        io.BytesIO(zip_bytes),
-        mimetype="application/zip",
-        as_attachment=True,
-        download_name=filename
-    )
+    return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+
 
 @app.get("/admin/leaderboard")
+@require_admin
 def admin_leaderboard():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
-
     show = get_active_show()
     if not show:
         return "No active show.", 500
 
     by_cat = leaderboard_by_category(int(show["id"]))
     overall = leaderboard_overall(int(show["id"]))
-
     return render_template("leaderboard.html", show=show, by_category=by_cat, overall=overall)
 
-@app.get("/admin/export-votes.csv")
-def admin_export_votes():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
 
+@app.get("/admin/export-votes.csv")
+@require_admin
+def admin_export_votes():
     show = get_active_show()
     if not show:
         return "No active show.", 500
@@ -548,43 +557,61 @@ def admin_export_votes():
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow([
-        "created_at", "category", "vote_qty", "amount_cents", "stripe_session_id",
-        "car_number", "year", "make", "model",
-        "owner_name", "owner_phone", "owner_email", "opt_in_future"
-    ])
+    w.writerow(
+        [
+            "created_at",
+            "category",
+            "vote_qty",
+            "amount_cents",
+            "stripe_session_id",
+            "car_number",
+            "year",
+            "make",
+            "model",
+            "owner_name",
+            "owner_phone",
+            "owner_email",
+            "opt_in_future",
+        ]
+    )
     for r in rows:
-        w.writerow([
-            r["created_at"], r["category"], r["vote_qty"], r["amount_cents"], r["stripe_session_id"],
-            r["car_number"], r["year"], r["make"], r["model"],
-            r["owner_name"], r["owner_phone"], r["owner_email"], r["opt_in_future"]
-        ])
+        w.writerow(
+            [
+                r["created_at"],
+                r["category"],
+                r["vote_qty"],
+                r["amount_cents"],
+                r["stripe_session_id"],
+                r["car_number"],
+                r["year"],
+                r["make"],
+                r["model"],
+                r["owner_name"],
+                r["owner_phone"],
+                r["owner_email"],
+                r["opt_in_future"],
+            ]
+        )
 
     mem = io.BytesIO(buf.getvalue().encode("utf-8"))
     mem.seek(0)
     return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="votes_export.csv")
 
-# ----------------------------
-# ADMIN: PLACEHOLDER CARS (pre-print tokens)
-# ----------------------------
-@app.get("/admin/placeholders")
-def admin_placeholders():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
 
+@app.get("/admin/placeholders")
+@require_admin
+def admin_placeholders():
     show = get_active_show()
     if not show:
         return "No active show.", 500
 
-    # show existing cars list to help you print/manage
     cars = list_show_cars_public(int(show["id"]))
     return render_template("admin_placeholders.html", show=show, cars=cars)
 
-@app.post("/admin/placeholders/create")
-def admin_placeholders_create():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
 
+@app.post("/admin/placeholders/create")
+@require_admin
+def admin_placeholders_create():
     show = get_active_show()
     if not show:
         return "No active show.", 500
@@ -605,32 +632,27 @@ def admin_placeholders_create():
     flash(f"Created {created} placeholder cars.", "ok")
     return redirect(url_for("admin_placeholders"))
 
-# ----------------------------
-# ADMIN: SPONSORS
-# ----------------------------
-@app.get("/admin/sponsors")
-def admin_sponsors():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
 
+@app.get("/admin/sponsors")
+@require_admin
+def admin_sponsors():
     show = get_active_show()
     if not show:
         return "No active show.", 500
 
-    title_sponsor, sponsors = get_show_sponsors(int(show["id"]))
+    title_sponsor, sponsors = (get_show_sponsors(int(show["id"])) or (None, []))
     return render_template("admin_sponsors.html", show=show, title_sponsor=title_sponsor, sponsors=sponsors)
 
-@app.post("/admin/sponsors/add")
-def admin_sponsors_add():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
 
+@app.post("/admin/sponsors/add")
+@require_admin
+def admin_sponsors_add():
     show = get_active_show()
     if not show:
         return "No active show.", 500
 
     name = request.form.get("name", "").strip()
-    logo_path = request.form.get("logo_path", "").strip()  # e.g. img/sponsors/acme.png
+    logo_path = request.form.get("logo_path", "").strip()
     website_url = request.form.get("website_url", "").strip()
     placement = request.form.get("placement", "standard").strip()
     sort_order_raw = request.form.get("sort_order", "100").strip()
@@ -654,11 +676,10 @@ def admin_sponsors_add():
     flash("Sponsor saved.", "ok")
     return redirect(url_for("admin_sponsors"))
 
-@app.post("/admin/sponsors/remove")
-def admin_sponsors_remove():
-    if not _require_admin():
-        return redirect(url_for("admin_page"))
 
+@app.post("/admin/sponsors/remove")
+@require_admin
+def admin_sponsors_remove():
     show = get_active_show()
     if not show:
         return "No active show.", 500
@@ -672,6 +693,7 @@ def admin_sponsors_remove():
     remove_sponsor_from_show(int(show["id"]), sponsor_id)
     flash("Sponsor removed from show.", "ok")
     return redirect(url_for("admin_sponsors"))
+
 
 # ----------------------------
 # RUN
