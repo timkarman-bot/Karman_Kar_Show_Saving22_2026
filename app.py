@@ -1,4 +1,7 @@
-# app.py (clean copy)
+# app.py
+# Karman Kar Shows & Events — Car show registration + QR voting + admin controls
+# 4-space indentation only (no tabs)
+
 import os
 import io
 import csv
@@ -18,6 +21,7 @@ from flask import (
     flash,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
+from functools import wraps
 
 from database import (
     init_db,
@@ -34,6 +38,7 @@ from database import (
     update_show_car_details,
     get_show_car_public_by_token,
     get_show_car_private_by_token,
+    get_show_car_by_number,
     # voting
     record_paid_votes,
     reset_votes_for_show,
@@ -51,8 +56,6 @@ from database import (
     set_title_sponsor,
 )
 
-from functools import wraps
-
 # ----------------------------
 # BASIC CONFIG
 # ----------------------------
@@ -65,7 +68,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-BASE_URL = os.getenv("BASE_URL", "")  # Railway: https://<yourapp>.up.railway.app
+BASE_URL = os.getenv("BASE_URL", "")  # e.g. https://<yourapp>.up.railway.app
 
 VOTE_PRICE_CENTS = 100  # $1 per vote
 
@@ -115,6 +118,22 @@ ensure_default_show(DEFAULT_SHOW)
 # ----------------------------
 # HELPERS
 # ----------------------------
+def _require_stripe() -> None:
+    if not stripe.api_key:
+        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY in Railway variables.")
+
+
+def _abs_url(path: str) -> str:
+    """
+    Stripe requires absolute URLs.
+    Uses BASE_URL if set; else request.url_root.
+    'path' must start with '/'.
+    """
+    if BASE_URL:
+        return BASE_URL.rstrip("/") + path
+    return request.url_root.rstrip("/") + path
+
+
 def require_admin(view_func):
     @wraps(view_func)
     def wrapped(*args, **kwargs):
@@ -125,20 +144,6 @@ def require_admin(view_func):
     return wrapped
 
 
-def _require_stripe():
-    if not stripe.api_key:
-        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY in Railway variables.")
-
-
-def _abs_url(path: str) -> str:
-    """
-    Stripe requires absolute URLs. Use BASE_URL if set; else request.url_root.
-    """
-    if BASE_URL:
-        return BASE_URL.rstrip("/") + path
-    return request.url_root.rstrip("/") + path
-
-
 # ----------------------------
 # GLOBAL TEMPLATE VARS
 # ----------------------------
@@ -147,7 +152,8 @@ def inject_globals():
     show = get_active_show()
     title_sponsor, sponsors = (None, [])
     if show:
-        title_sponsor, sponsors = (get_show_sponsors(int(show["id"])) or (None, []))
+        result = get_show_sponsors(int(show["id"])) or (None, [])
+        title_sponsor, sponsors = result
 
     return {
         "active_show": show,
@@ -373,6 +379,7 @@ def create_checkout_session():
     if vote_qty < 1 or vote_qty > 50:
         return jsonify({"ok": False, "error": "Vote quantity must be between 1 and 50."}), 400
 
+    # IMPORTANT: url_for() returns '/path' so _abs_url() gets a leading slash.
     success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}"
     cancel_url = _abs_url(
         url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug)
@@ -387,7 +394,7 @@ def create_checkout_session():
                     "currency": "usd",
                     "unit_amount": VOTE_PRICE_CENTS,
                     "product_data": {
-                        "name": f"Vote – {CATEGORY_SLUGS[category_slug]} (Car #{car['car_number']})"
+                        "name": f"Vote – {CATEGORY_SLUGS[category_slug]} (Car #{car['car_number']})",
                     },
                 },
                 "quantity": vote_qty,
@@ -440,10 +447,14 @@ def vote_success():
 
 
 # ----------------------------
-# ADMIN
+# ADMIN (RESTRICTED)
 # ----------------------------
 @app.get("/admin")
 def admin_page():
+    """
+    Publicly reachable, but only shows the dashboard if logged in.
+    Otherwise shows the login form.
+    """
     show = get_active_show()
     next_url = request.args.get("next", "")
     if not session.get("admin_authed"):
@@ -455,13 +466,19 @@ def admin_page():
 def admin_login():
     pw = request.form.get("password", "")
     next_url = request.form.get("next", "") or url_for("admin_page")
-    show = get_active_show()
 
+    show = get_active_show()
     if pw == ADMIN_PASSWORD:
         session["admin_authed"] = True
         return redirect(next_url)
 
-    return render_template("admin.html", show=show, authed=False, login_error="Incorrect password.", next=next_url)
+    return render_template(
+        "admin.html",
+        show=show,
+        authed=False,
+        login_error="Incorrect password.",
+        next=next_url,
+    )
 
 
 @app.post("/admin/logout")
@@ -471,6 +488,7 @@ def admin_logout():
     return redirect(url_for("admin_page"))
 
 
+# ---- Snapshot export + close voting/export ----
 @app.get("/admin/export-snapshot.zip")
 @require_admin
 def admin_export_snapshot_zip():
@@ -479,21 +497,36 @@ def admin_export_snapshot_zip():
         return "No active show.", 500
 
     zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
-    return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.post("/admin/close-voting-and-export")
 @require_admin
 def admin_close_voting_and_export():
+    """
+    One-click: closes voting and downloads a snapshot ZIP immediately.
+    """
     show = get_active_show()
     if not show:
         return "No active show.", 500
 
     set_show_voting_open(int(show["id"]), False)
+
     zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
-    return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
+# ---- Voting controls ----
 @app.post("/admin/toggle-voting")
 @require_admin
 def admin_toggle_voting():
@@ -521,6 +554,7 @@ def admin_close_voting():
     return redirect(url_for("admin_page"))
 
 
+# ---- Reset votes (export snapshot FIRST) ----
 @app.post("/admin/reset-votes")
 @require_admin
 def admin_reset_votes():
@@ -531,9 +565,15 @@ def admin_reset_votes():
     zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
     reset_votes_for_show(int(show["id"]))
 
-    return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
+# ---- Leaderboard / exports ----
 @app.get("/admin/leaderboard")
 @require_admin
 def admin_leaderboard():
@@ -598,6 +638,7 @@ def admin_export_votes():
     return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="votes_export.csv")
 
 
+# ---- Placeholder cars ----
 @app.get("/admin/placeholders")
 @require_admin
 def admin_placeholders():
@@ -633,6 +674,7 @@ def admin_placeholders_create():
     return redirect(url_for("admin_placeholders"))
 
 
+# ---- Sponsors ----
 @app.get("/admin/sponsors")
 @require_admin
 def admin_sponsors():
@@ -640,7 +682,8 @@ def admin_sponsors():
     if not show:
         return "No active show.", 500
 
-    title_sponsor, sponsors = (get_show_sponsors(int(show["id"])) or (None, []))
+    result = get_show_sponsors(int(show["id"])) or (None, [])
+    title_sponsor, sponsors = result
     return render_template("admin_sponsors.html", show=show, title_sponsor=title_sponsor, sponsors=sponsors)
 
 
@@ -652,7 +695,7 @@ def admin_sponsors_add():
         return "No active show.", 500
 
     name = request.form.get("name", "").strip()
-    logo_path = request.form.get("logo_path", "").strip()
+    logo_path = request.form.get("logo_path", "").strip()  # e.g. img/sponsors/acme.png
     website_url = request.form.get("website_url", "").strip()
     placement = request.form.get("placement", "standard").strip()
     sort_order_raw = request.form.get("sort_order", "100").strip()

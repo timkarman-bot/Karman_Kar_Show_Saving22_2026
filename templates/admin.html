@@ -22,27 +22,22 @@
   </div>
 
   {% if not authed %}
-    <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6 max-w-md">
-      <form method="POST" action="{{ url_for('admin_login') }}" class="grid gap-3">
-        <!-- IMPORTANT: redirect back to intended page after login -->
-        <input type="hidden" name="next" value="{{ next or '' }}">
+<div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6 max-w-md">
+    <form method="POST" action="{{ url_for('admin_login') }}" class="grid gap-3">
+     <input type="hidden" name="next" value="{{ next or '' }}">
 
-        <label class="text-sm font-semibold">Admin password</label>
-        <input
-          name="password"
-          type="password"
-          class="w-full rounded-2xl border border-slate-200 px-4 py-3"
-          placeholder="Enter password"
-          autocomplete="current-password"
-          autofocus
-        />
+     <label class="text-sm font-semibold">Admin password</label>
+     <input name="password" type="password"
+         class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+         placeholder="Enter password" />
 
-        {% if login_error %}
-          <div class="text-sm text-red-700">{{ login_error }}</div>
-        {% endif %}
+  {% if login_error %}
+    <div class="text-sm text-red-700">{{ login_error }}</div>
+  {% endif %}
 
-        <button class="btn btn-primary" type="submit">Sign in</button>
-      </form>
+  <button class="btn btn-primary" type="submit">Sign in</button>
+</form>
+
     </div>
   {% else %}
 
