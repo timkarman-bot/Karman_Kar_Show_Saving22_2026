@@ -76,6 +76,18 @@
           <a class="btn btn-outline" href="{{ url_for('admin_sponsors') }}">Sponsors</a>
           <a class="btn btn-outline" href="{{ url_for('admin_placeholders') }}">Placeholder cars</a>
 
+          <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"href="{{ url_for('admin_export_snapshot_zip') }}">Export snapshot (ZIP)
+          </a>
+
+       <form method="POST" action="{{ url_for('admin_close_voting_and_export') }}"
+      onsubmit="return confirm('This will CLOSE voting and download a snapshot ZIP. Continue?');">
+  <button class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" type="submit">
+    Close voting + export ZIP
+  </button>
+</form>
+
+
+
           <form method="POST" action="{{ url_for('admin_reset_votes') }}"
                 onsubmit="return confirm('Reset ALL votes for the active show? This cannot be undone.');">
             <button class="btn btn-outline border-red-200 text-red-700 hover:bg-red-50" type="submit">Reset votes</button>
