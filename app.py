@@ -14,7 +14,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
     init_db,
     ensure_default_show,
-    build_snapeshot_zip_bytes,
+    build_snapshot_zip_bytes,
     get_active_show,
     get_show_by_slug,
     toggle_show_voting,
