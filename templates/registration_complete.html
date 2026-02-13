@@ -1,155 +1,200 @@
 {% extends "base.html" %}
-{% set title = "Windshield Cards • " ~ show["title"] %}
+{% set title = "Registration Complete • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
 
 {% block content %}
 <style>
   @media print {
     header, footer, .no-print { display: none !important; }
     main { padding: 0 !important; }
+    .print-page { box-shadow: none !important; border: none !important; }
+    .print-cut { border: 1.5px dashed #94A3B8 !important; }
     a { text-decoration: none !important; color: inherit !important; }
-    .page { page-break-after: always; }
+  }
+
+  /* QR + label contrast for sunlight + cheap paper */
+  .qr-box {
+    border: 2px solid #0F172A;
+    border-radius: 14px;
+    background: #FFF;
+    padding: 8px;
+  }
+  .cat-box {
+    border: 2px solid #0F172A;
+    border-radius: 16px;
+    background: #F8FAFC;
+    padding: 10px 12px;
+  }
+  .sponsor-tile {
+    border: 1.5px solid #0F172A;
+    border-radius: 14px;
+    background: #FFF;
+    padding: 8px 10px;
   }
 </style>
 
-<div class="max-w-6xl no-print">
-  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+<div class="max-w-6xl">
+
+  <!-- Screen-only confirmation -->
+  <section class="no-print rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs">
-      Cards ready
+      Registration complete
     </div>
+
     <h1 class="mt-4 text-3xl font-semibold tracking-tight">Car #{{ car["car_number"] }}</h1>
-    <div class="mt-1 text-slate-700">{{ car["year"] }} {{ car["make"] }} {{ car["model"] }} • Owner: {{ car["owner_name"] or "—" }}</div>
+    <div class="mt-1 text-slate-700">{{ car["year"] }} {{ car["make"] }} {{ car["model"] }}</div>
 
     <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div class="font-semibold">Printing tips</div>
+      <div class="font-semibold">Printing</div>
       <div class="mt-1 text-sm text-slate-600">
-        These print with dark borders and high-contrast QR codes for cheap paper and sunlight.
+        Print the windshield voting sheet. Sponsor logos and all QR codes are on ONE page.
+        You can also print the instructions handout for the table/registration area.
       </div>
     </div>
 
     <div class="mt-5 flex flex-wrap gap-3">
-      <button onclick="window.print()" class="btn btn-primary">Print (2 pages)</button>
-      <a class="btn btn-outline" href="{{ url_for('show_page', slug=show['slug']) }}">Back to show</a>
-    </div>
-  </div>
-</div>
+      <button onclick="window.print()"
+              class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90">
+        Print windshield voting sheet
+      </button>
 
-<!-- PAGE 1: VOTING QR CODES -->
-<section class="page mt-6 rounded-3xl bg-white shadow-sm print-border p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <div class="text-xs font-semibold text-slate-600">WINDSHIELD VOTING</div>
-      <div class="mt-2 text-3xl font-extrabold tracking-tight">CAR #{{ car["car_number"] }}</div>
-      <div class="mt-1 text-sm text-slate-700">{{ car["year"] }} {{ car["make"] }} {{ car["model"] }}</div>
-      <div class="mt-1 text-sm text-slate-700">Owner: <span class="font-semibold">{{ car["owner_name"] or "—" }}</span></div>
-      <div class="mt-2 text-xs text-slate-600">{{ show["title"] }}</div>
-    </div>
+      {% if show %}
+        <a class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50"
+           href="{{ url_for('voting_instructions', show_slug=show['slug']) }}" target="_blank" rel="noopener">
+          Open/Print voting instructions
+        </a>
 
-    <div class="text-right">
-      <div class="text-xs font-semibold text-slate-600">TITLE SPONSOR</div>
-      <div class="mt-2 h-14 w-44 rounded-xl print-border-soft grid place-items-center overflow-hidden bg-white">
-        {% if title_sponsor and title_sponsor["logo_path"] %}
-          <img class="h-full w-full object-contain p-2" src="{{ url_for('static', filename=title_sponsor['logo_path']) }}" alt="{{ title_sponsor['name'] }}">
-        {% else %}
-          <div class="text-xs text-slate-600">Logo</div>
-        {% endif %}
-      </div>
-      {% if title_sponsor %}
-        <div class="mt-1 text-xs font-semibold text-slate-700">{{ title_sponsor["name"] }}</div>
+        <a class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50"
+           href="{{ url_for('show_page', slug=show['slug']) }}">
+          Back to show
+        </a>
       {% endif %}
     </div>
-  </div>
+  </section>
 
-  <div class="mt-4 rounded-2xl print-border-soft bg-white p-4">
-    <div class="font-semibold text-slate-900">How to vote</div>
-    <div class="mt-1 text-sm text-slate-700">
-      Scan your category → choose vote quantity → pay $1 per vote.
-    </div>
-  </div>
+  <!-- PRINT: ONE PAGE windshield voting sheet -->
+  <section class="print-page mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="print-cut rounded-3xl border border-slate-200 p-6">
 
-  {% if sponsors and sponsors|length > 0 %}
-  <div class="mt-4 grid grid-cols-4 gap-2">
-    {% for s in sponsors[:8] %}
-      <div class="h-12 rounded-xl print-border-soft bg-white overflow-hidden grid place-items-center">
-        {% if s["logo_path"] %}
-          <img class="h-full w-full object-contain p-2" src="{{ url_for('static', filename=s['logo_path']) }}" alt="{{ s['name'] }}">
-        {% else %}
-          <div class="text-[10px] text-slate-700 px-2 text-center">{{ s["name"] }}</div>
-        {% endif %}
-      </div>
-    {% endfor %}
-  </div>
-  {% endif %}
+      <!-- Header row: car info + title sponsor -->
+      <div class="flex items-start justify-between gap-5">
+        <div class="min-w-0">
+          <div class="text-xs font-semibold text-slate-500">WINDSHIELD VOTING</div>
+          <div class="mt-1 text-3xl font-semibold tracking-tight">Car #{{ car["car_number"] }}</div>
+          <div class="mt-1 text-sm text-slate-800">
+            {{ car["year"] }} {{ car["make"] }} {{ car["model"] }}
+          </div>
 
-  <div class="mt-5 grid grid-cols-2 gap-3">
-    {% for slug, name in CATEGORY_SLUGS.items() %}
-      <div class="rounded-2xl print-border-soft p-4">
-        <div class="text-[11px] font-extrabold text-slate-900">SCAN TO VOTE</div>
-        <div class="mt-1 text-lg font-extrabold text-slate-900">{{ name }}</div>
+          <!-- owner name allowed public (no phone/email) -->
+          {% if car["owner_name"] %}
+            <div class="mt-1 text-sm text-slate-700">
+              Owner: <span class="font-semibold">{{ car["owner_name"] }}</span>
+            </div>
+          {% endif %}
 
-        <div class="mt-3 qr-frame rounded-xl p-2 w-fit">
-          <div id="qr-{{ slug }}"></div>
+          {% if show %}
+            <div class="mt-2 text-xs text-slate-500">{{ show["title"] }}</div>
+          {% endif %}
+
+          <!-- Small concise eligibility note (as requested) -->
+          <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <div class="text-[12px] font-semibold text-slate-800">
+              Eligibility:
+              <span class="font-normal text-slate-700">
+                Veterans/Active Military vote for Branch awards.
+                Everyone can vote for People’s Choice.
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div class="mt-2 text-[11px] text-slate-800 font-semibold">$1 per vote • Fast checkout</div>
+        <div class="w-64 text-right">
+          <div class="text-xs font-semibold text-slate-500">TITLE SPONSOR</div>
+          {% if title_sponsor %}
+            <div class="mt-2 sponsor-tile">
+              <div class="flex items-center justify-end gap-3">
+                {% if title_sponsor["logo_path"] %}
+                  <img src="{{ url_for('static', filename=title_sponsor['logo_path']) }}"
+                       alt="{{ title_sponsor['name'] }}"
+                       class="h-10 object-contain" />
+                {% endif %}
+                <div class="text-sm font-semibold text-slate-900">
+                  {{ title_sponsor["name"] }}
+                </div>
+              </div>
+            </div>
+          {% else %}
+            <div class="mt-2 h-12 rounded-xl border border-dashed border-slate-300 grid place-items-center text-xs text-slate-500">
+              Add title sponsor in Admin
+            </div>
+          {% endif %}
+        </div>
       </div>
-    {% endfor %}
-  </div>
 
-  <div class="mt-4 text-[11px] text-slate-700 font-semibold">
-    Powered by Karman Kar Shows & Events • Secure payments by Stripe
-  </div>
-</section>
+      <!-- Sponsor strip (uses whitespace on the sheet) -->
+      {% if sponsors and sponsors|length > 0 %}
+        <div class="mt-5">
+          <div class="text-xs font-semibold text-slate-500">SPONSORS</div>
+          <div class="mt-2 grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {% for s in sponsors %}
+              <div class="sponsor-tile flex items-center justify-center">
+                {% if s["logo_path"] %}
+                  <img src="{{ url_for('static', filename=s['logo_path']) }}"
+                       alt="{{ s['name'] }}"
+                       class="h-8 object-contain" />
+                {% else %}
+                  <div class="text-[11px] font-semibold text-slate-700">{{ s["name"] }}</div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
 
-<!-- PAGE 2: OWNER CHECK-IN QR (move to back page) -->
-<section class="page mt-6 rounded-3xl bg-white shadow-sm print-border p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div>
-      <div class="text-xs font-semibold text-slate-600">OWNER ONLY</div>
-      <div class="mt-2 text-3xl font-extrabold tracking-tight">CHECK-IN</div>
-      <div class="mt-2 text-sm text-slate-700">
-        Scan this once to confirm your owner info and car details.
+      <!-- QR grid (tight, one page) -->
+      <div class="mt-5 grid gap-3 grid-cols-2">
+        {% for slug, name in CATEGORY_SLUGS.items() %}
+          <a class="block rounded-2xl border border-slate-200 p-3 hover:bg-slate-50"
+             href="{{ url_for('vote_qty_page', show_slug=show['slug'], car_token=car['car_token'], category_slug=slug) }}">
+            <div class="cat-box flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-[11px] font-semibold text-slate-600">SCAN TO VOTE</div>
+                <div class="text-base font-semibold text-slate-900 leading-tight">{{ name }}</div>
+                <div class="mt-1 text-[11px] text-slate-600">$1 per vote • Scan & vote</div>
+              </div>
+              <div class="qr-box">
+                <div id="qr-{{ slug }}" class="mx-auto w-fit"></div>
+              </div>
+            </div>
+          </a>
+        {% endfor %}
       </div>
-      <div class="mt-3 text-sm text-slate-700 font-semibold">
-        Car #{{ car["car_number"] }} • {{ car["year"] }} {{ car["make"] }} {{ car["model"] }}
-      </div>
-    </div>
 
-    <div class="text-right">
-      <div class="text-xs font-semibold text-slate-600">TITLE SPONSOR</div>
-      <div class="mt-2 h-14 w-44 rounded-xl print-border-soft grid place-items-center overflow-hidden bg-white">
-        {% if title_sponsor and title_sponsor["logo_path"] %}
-          <img class="h-full w-full object-contain p-2" src="{{ url_for('static', filename=title_sponsor['logo_path']) }}" alt="{{ title_sponsor['name'] }}">
-        {% else %}
-          <div class="text-xs text-slate-600">Logo</div>
+      <div class="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500">
+        <div>Secure payments by Stripe</div>
+        {% if show %}
+          <div class="text-right">
+            Print instructions: {{ url_for('voting_instructions', show_slug=show['slug'], _external=True) }}
+          </div>
         {% endif %}
       </div>
     </div>
-  </div>
-
-  <div class="mt-5 rounded-2xl print-border-soft p-5 bg-white">
-    <div class="text-sm font-semibold text-slate-900">Scan to check-in</div>
-    <div class="mt-3 qr-frame rounded-xl p-3 w-fit">
-      <div id="qr-checkin"></div>
-    </div>
-    <div class="mt-2 text-xs text-slate-700">
-      This page is not public. Phone/email are stored privately.
-    </div>
-  </div>
-
-  <div class="mt-5 text-xs text-slate-700">
-    Check-in URL:
-    <span class="font-mono break-all">{{ url_for('checkin_page', show_slug=show['slug'], car_token=car['car_token'], _external=True) }}</span>
-  </div>
-</section>
+  </section>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script>
   (function () {
     const items = [
       {% for slug, name in CATEGORY_SLUGS.items() %}
-        { id: "qr-{{ slug }}", url: "{{ url_for('vote_qty_page', show_slug=show['slug'], car_token=car['car_token'], category_slug=slug, _external=True) }}" }{% if not loop.last %},{% endif %}
+        {
+          id: "qr-{{ slug }}",
+          url: "{{ url_for('vote_qty_page', show_slug=show['slug'], car_token=car['car_token'], category_slug=slug, _external=True) }}"
+        }{% if not loop.last %},{% endif %}
       {% endfor %}
     ];
+
+    // Tuned to fit sponsor strip + car info on one page, still scannable.
+    const QR_SIZE = 105;
 
     items.forEach((it) => {
       const el = document.getElementById(it.id);
@@ -157,22 +202,11 @@
       el.innerHTML = "";
       new QRCode(el, {
         text: it.url,
-        width: 120,
-        height: 120,
+        width: QR_SIZE,
+        height: QR_SIZE,
         correctLevel: QRCode.CorrectLevel.H
       });
     });
-
-    const checkinEl = document.getElementById("qr-checkin");
-    if (checkinEl) {
-      checkinEl.innerHTML = "";
-      new QRCode(checkinEl, {
-        text: "{{ url_for('checkin_page', show_slug=show['slug'], car_token=car['car_token'], _external=True) }}",
-        width: 160,
-        height: 160,
-        correctLevel: QRCode.CorrectLevel.H
-      });
-    }
   })();
 </script>
 {% endblock %}

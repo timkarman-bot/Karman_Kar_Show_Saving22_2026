@@ -175,6 +175,14 @@ def home():
         return "No active show configured.", 500
     return render_template("home.html", show=show)
 
+# Added to print voting instructions 2/13/2026
+
+@app.get("/instructions/<show_slug>")
+def voting_instructions(show_slug: str):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return "Show not found.", 404
+    return render_template("voting_instructions.html", show=show)
 
 @app.get("/events")
 def events():
