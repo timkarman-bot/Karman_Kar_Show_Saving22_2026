@@ -1,7 +1,15 @@
 import os
 import sqlite3
 import secrets
+import io
+import csv
+import zipfile
+
+
 from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
+
+
 
 DB_PATH = os.getenv("DB_PATH", "app.db")
 
@@ -546,4 +554,122 @@ def get_show_sponsors(show_id: int) -> Tuple[Optional[sqlite3.Row], List[sqlite3
     """, (show_id,)).fetchall()
 
     conn.close()
+    def export_show_row(show_id: int) -> Optional[sqlite3.Row]:
+    conn = _conn()
+    cur = conn.cursor()
+    row = cur.execute("SELECT * FROM shows WHERE id = ? LIMIT 1", (show_id,)).fetchone()
+    conn.close()
+    return row
+
+
+def export_people_rows_for_show(show_id: int) -> List[sqlite3.Row]:
+    """
+    People who have cars registered in this show (includes phone/email for admin export).
+    """
+    conn = _conn()
+    cur = conn.cursor()
+    rows = cur.execute("""
+        SELECT DISTINCT
+            p.*
+        FROM show_cars sc
+        JOIN people p ON p.id = sc.person_id
+        WHERE sc.show_id = ?
+        ORDER BY p.created_at ASC
+    """, (show_id,)).fetchall()
+    conn.close()
+    return rows
+
+
+def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
+    conn = _conn()
+    cur = conn.cursor()
+    rows = cur.execute("""
+        SELECT
+            sc.*,
+            p.name as owner_name,
+            p.phone as owner_phone,
+            p.email as owner_email,
+            p.opt_in_future
+        FROM show_cars sc
+        JOIN people p ON p.id = sc.person_id
+        WHERE sc.show_id = ?
+        ORDER BY sc.car_number ASC
+    """, (show_id,)).fetchall()
+    conn.close()
+    return rows
+
+
+def build_snapshot_zip_bytes(show_id: int) -> Tuple[bytes, str]:
+    """
+    Returns (zip_bytes, filename).
+    ZIP contains:
+      - show.csv
+      - cars.csv
+      - people.csv
+      - votes.csv
+    """
+    show = export_show_row(show_id)
+    if not show:
+        raise ValueError("Show not found")
+
+    # Pull rows
+    cars = export_show_cars_rows(show_id)
+    people = export_people_rows_for_show(show_id)
+    votes = export_votes_for_show(show_id)
+
+    # Filename
+    slug = show["slug"]
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    zip_name = f"{slug}-snapshot-{ts}Z.zip"
+
+    mem = io.BytesIO()
+    with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as z:
+
+        # show.csv (single row)
+        show_buf = io.StringIO()
+        sw = csv.writer(show_buf)
+        show_cols = list(show.keys())
+        sw.writerow(show_cols)
+        sw.writerow([show[c] for c in show_cols])
+        z.writestr("show.csv", show_buf.getvalue().encode("utf-8"))
+
+        # cars.csv
+        cars_buf = io.StringIO()
+        cw = csv.writer(cars_buf)
+        if cars:
+            car_cols = list(cars[0].keys())
+            cw.writerow(car_cols)
+            for r in cars:
+                cw.writerow([r[c] for c in car_cols])
+        else:
+            cw.writerow(["(no cars)"])
+        z.writestr("cars.csv", cars_buf.getvalue().encode("utf-8"))
+
+        # people.csv
+        people_buf = io.StringIO()
+        pw = csv.writer(people_buf)
+        if people:
+            pcols = list(people[0].keys())
+            pw.writerow(pcols)
+            for r in people:
+                pw.writerow([r[c] for c in pcols])
+        else:
+            pw.writerow(["(no people)"])
+        z.writestr("people.csv", people_buf.getvalue().encode("utf-8"))
+
+        # votes.csv (already has joined fields via export_votes_for_show)
+        votes_buf = io.StringIO()
+        vw = csv.writer(votes_buf)
+        if votes:
+            vcols = list(votes[0].keys())
+            vw.writerow(vcols)
+            for r in votes:
+                vw.writerow([r[c] for c in vcols])
+        else:
+            vw.writerow(["(no votes)"])
+        z.writestr("votes.csv", votes_buf.getvalue().encode("utf-8"))
+
+    mem.seek(0)
+    return mem.getvalue(), zip_name
+
     return title, others

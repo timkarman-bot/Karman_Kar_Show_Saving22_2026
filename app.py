@@ -2,6 +2,7 @@ import os
 import io
 import csv
 from typing import Dict, Optional
+from flask import Response
 
 import stripe
 from flask import (
@@ -13,6 +14,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
     init_db,
     ensure_default_show,
+    build_snapeshot_zip_bytes,
     get_active_show,
     get_show_by_slug,
     toggle_show_voting,
@@ -409,6 +411,51 @@ def admin_page():
         return render_template("admin.html", show=show, authed=False)
     return render_template("admin.html", show=show, authed=True)
 
+@app.get("/admin/export-snapshot.zip")
+def admin_export_snapshot_zip():
+    if not session.get("admin_authed"):
+        return redirect(url_for("admin_page"))
+
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
+
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+@app.post("/admin/close-voting-and-export")
+def admin_close_voting_and_export():
+    """
+    One-click: closes voting and downloads a snapshot ZIP immediately.
+    """
+    if not session.get("admin_authed"):
+        return redirect(url_for("admin_page"))
+
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    # Close voting first
+    set_show_voting_open(int(show["id"]), False)
+
+    # Then export snapshot
+    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
+
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=filename
+    )
+
+
 @app.post("/admin/login")
 def admin_login():
     pw = request.form.get("password", "")
@@ -422,6 +469,8 @@ def admin_login():
 def admin_logout():
     session.pop("admin_authed", None)
     return redirect(url_for("admin_page"))
+
+
 
 @app.post("/admin/toggle-voting")
 def admin_toggle_voting():
@@ -452,12 +501,25 @@ def admin_close_voting():
 
 @app.post("/admin/reset-votes")
 def admin_reset_votes():
-    if not _require_admin():
+    if not session.get("admin_authed"):
         return redirect(url_for("admin_page"))
+
     show = get_active_show()
-    if show:
-        reset_votes_for_show(int(show["id"]))
-    return redirect(url_for("admin_page"))
+    if not show:
+        return "No active show.", 500
+
+    # Export first (download)
+    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
+
+    # Then reset votes
+    reset_votes_for_show(int(show["id"]))
+
+    return send_file(
+        io.BytesIO(zip_bytes),
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=filename
+    )
 
 @app.get("/admin/leaderboard")
 def admin_leaderboard():
