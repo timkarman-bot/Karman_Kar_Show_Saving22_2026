@@ -529,37 +529,49 @@ def set_title_sponsor(show_id: int, sponsor_id: int) -> None:
     conn.close()
 
 
-def get_show_sponsors(show_id: int) -> Tuple[Optional[sqlite3.Row], List[sqlite3.Row]]:
+def get_show_sponsors(show_id: int):
     """
-    Returns (title_sponsor_row_or_none, [standard_sponsors...])
+    Returns (title_sponsor, sponsors)
+    - title_sponsor: dict | None
+    - sponsors: list[dict]
+    Always returns a 2-tuple, never None.
     """
     conn = _conn()
     cur = conn.cursor()
 
-    title = cur.execute("""
-        SELECT s.*
-        FROM show_sponsors ss
-        JOIN sponsors s ON s.id = ss.sponsor_id
-        WHERE ss.show_id = ? AND ss.placement = 'title'
-        ORDER BY ss.sort_order ASC
-        LIMIT 1
-    """, (show_id,)).fetchone()
-
-    others = cur.execute("""
-        SELECT s.*, ss.sort_order
-        FROM show_sponsors ss
-        JOIN sponsors s ON s.id = ss.sponsor_id
-        WHERE ss.show_id = ? AND ss.placement = 'standard'
-        ORDER BY ss.sort_order ASC, s.name ASC
-    """, (show_id,)).fetchall()
+    # If your sponsors table isn't created yet, fail safe:
+    try:
+        rows = cur.execute("""
+            SELECT id, show_id, name, website, logo_path, is_title, sort_order
+            FROM sponsors
+            WHERE show_id = ?
+            ORDER BY is_title DESC, sort_order ASC, id ASC
+        """, (show_id,)).fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        return None, []
 
     conn.close()
-def export_show_row(show_id: int) -> Optional[sqlite3.Row]:
-    conn = _conn()
-    cur = conn.cursor()
-    row = cur.execute("SELECT * FROM shows WHERE id = ? LIMIT 1", (show_id,)).fetchone()
-    conn.close()
-    return row
+
+    title = None
+    sponsors = []
+
+    for r in rows:
+        item = {
+            "id": r["id"],
+            "show_id": r["show_id"],
+            "name": r["name"],
+            "website": r["website"],
+            "logo_path": r["logo_path"],
+            "is_title": int(r["is_title"] or 0),
+            "sort_order": int(r["sort_order"] or 0),
+        }
+        if item["is_title"] == 1 and title is None:
+            title = item
+        else:
+            sponsors.append(item)
+
+    return title, sponsors
 
 
 def export_people_rows_for_show(show_id: int) -> List[sqlite3.Row]:

@@ -115,13 +115,13 @@ def _abs_url(path: str) -> str:
 # GLOBAL TEMPLATE VARS
 # ----------------------------
 @app.context_processor
+@app.context_processor
 def inject_globals():
     show = get_active_show()
-
-    title_sponsor = None
-    sponsors = []
+    title_sponsor, sponsors = (None, [])
     if show:
-        title_sponsor, sponsors = get_show_sponsors(int(show["id"]))
+        result = get_show_sponsors(int(show["id"])) or (None, [])
+        title_sponsor, sponsors = result
 
     return {
         "active_show": show,
