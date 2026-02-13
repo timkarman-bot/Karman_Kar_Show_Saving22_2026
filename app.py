@@ -1,12 +1,12 @@
 import os
 import io
 import csv
-from typing import Dict
+from typing import Dict, Optional
 
 import stripe
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    jsonify, session, send_file, abort
+    jsonify, session, send_file, abort, flash
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -17,17 +17,29 @@ from database import (
     get_show_by_slug,
     toggle_show_voting,
     set_show_voting_open,
+    # registration / checkin
     create_person,
+    update_person,
     create_show_car,
-    get_show_car_by_token,
+    update_show_car_details,
+    get_show_car_public_by_token,
+    get_show_car_private_by_token,
+    get_show_car_by_number,
+    # voting
     record_paid_votes,
     reset_votes_for_show,
     export_votes_for_show,
     leaderboard_by_category,
     leaderboard_overall,
+    # placeholder cars (pre-print)
     create_placeholder_cars,
-    update_person,
-    update_show_car_details,
+    list_show_cars_public,
+    # sponsors
+    get_show_sponsors,
+    upsert_sponsor,
+    attach_sponsor_to_show,
+    remove_sponsor_from_show,
+    set_title_sponsor,
 )
 
 # ----------------------------
@@ -36,14 +48,13 @@ from database import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
 
-# Railway / reverse-proxy friendly (fixes _external URLs)
+# Railway / reverse-proxy friendly (fixes _external URLs and scheme)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")  # optional for future webhook flow
-BASE_URL = os.getenv("BASE_URL", "")  # set in Railway: https://<yourapp>.up.railway.app
+BASE_URL = os.getenv("BASE_URL", "")  # Railway: https://<yourapp>.up.railway.app
 
 VOTE_PRICE_CENTS = 100  # $1 per vote
 
@@ -81,26 +92,43 @@ init_db()
 ensure_default_show(DEFAULT_SHOW)
 
 # ----------------------------
+# HELPERS
+# ----------------------------
+def _require_admin() -> bool:
+    return bool(session.get("admin_authed"))
+
+def _require_stripe():
+    if not stripe.api_key:
+        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY in Railway variables.")
+
+def _abs_url(path: str) -> str:
+    """
+    Stripe requires absolute URLs. Use BASE_URL if set; else request.url_root.
+    """
+    if BASE_URL:
+        return BASE_URL.rstrip("/") + path
+    return request.url_root.rstrip("/") + path
+
+# ----------------------------
 # GLOBAL TEMPLATE VARS
 # ----------------------------
 @app.context_processor
 def inject_globals():
     show = get_active_show()
+
+    title_sponsor = None
+    sponsors = []
+    if show:
+        title_sponsor, sponsors = get_show_sponsors(int(show["id"]))
+
     return {
         "active_show": show,
         "CATEGORY_SLUGS": CATEGORY_SLUGS,
         "CATEGORY_NAMES": list(CATEGORY_SLUGS.values()),
+        "title_sponsor": title_sponsor,
+        "sponsors": sponsors,
+        "is_admin": session.get("admin_authed", False),
     }
-
-def _require_stripe():
-    if not stripe.api_key:
-        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY in Railway Variables.")
-
-def _abs_url(path: str) -> str:
-    """Railway-friendly absolute URL builder."""
-    if BASE_URL:
-        return BASE_URL.rstrip("/") + path
-    return request.url_root.rstrip("/") + path
 
 # ----------------------------
 # PUBLIC PAGES
@@ -122,10 +150,11 @@ def show_page(slug: str):
     show = get_show_by_slug(slug)
     if not show:
         return render_template("show.html", show={"title": "Show Not Found"}, not_found=True)
-    return render_template("show.html", show=show, not_found=False)
+    cars = list_show_cars_public(int(show["id"]))
+    return render_template("show.html", show=show, cars=cars, not_found=False)
 
 # ----------------------------
-# REGISTRATION (optional for normal shows)
+# REGISTRATION (direct registration)
 # ----------------------------
 @app.get("/register")
 def register_page():
@@ -176,20 +205,23 @@ def register_submit():
 
     return redirect(url_for("registration_complete", show_slug=show["slug"], car_token=car_token))
 
+# ----------------------------
+# PRINT / WINDSHIELD CARDS (public page to print)
+# ----------------------------
 @app.get("/r/<show_slug>/<car_token>")
 def registration_complete(show_slug: str, car_token: str):
     show = get_show_by_slug(show_slug)
     if not show:
         return "Show not found.", 404
 
-    car = get_show_car_by_token(int(show["id"]), car_token)
+    car = get_show_car_public_by_token(int(show["id"]), car_token)
     if not car:
         return "Car not found.", 404
 
     return render_template("registration_complete.html", show=show, car=car)
 
 # ----------------------------
-# STAFF CHECK-IN (for pre-printed cards)
+# OWNER CHECK-IN (preprinted workflow)
 # /checkin/<show_slug>/<car_token>
 # ----------------------------
 @app.get("/checkin/<show_slug>/<car_token>")
@@ -198,11 +230,12 @@ def checkin_page(show_slug: str, car_token: str):
     if not show:
         return "Show not found.", 404
 
-    car = get_show_car_by_token(int(show["id"]), car_token)
-    if not car:
+    car_private = get_show_car_private_by_token(int(show["id"]), car_token)
+    if not car_private:
         return "Car not found.", 404
 
-    return render_template("checkin.html", show=show, car=car)
+    # If placeholder, owner_name may be empty and year/make/model may be TBD
+    return render_template("checkin.html", show=show, car=car_private)
 
 @app.post("/checkin/<show_slug>/<car_token>")
 def checkin_submit(show_slug: str, car_token: str):
@@ -210,8 +243,8 @@ def checkin_submit(show_slug: str, car_token: str):
     if not show:
         return "Show not found.", 404
 
-    car = get_show_car_by_token(int(show["id"]), car_token)
-    if not car:
+    car_private = get_show_car_private_by_token(int(show["id"]), car_token)
+    if not car_private:
         return "Car not found.", 404
 
     name = request.form.get("name", "").strip()
@@ -224,27 +257,26 @@ def checkin_submit(show_slug: str, car_token: str):
     model = request.form.get("model", "").strip()
 
     if not (name and phone and email and year and make and model):
-        return render_template(
-            "checkin.html",
-            show=show,
-            car=car,
-            error="Please fill out all required fields."
-        )
+        return render_template("checkin.html", show=show, car=car_private, error="Please fill out all required fields.")
 
-    # Update existing placeholder records
     update_person(
-        person_id=int(car["person_id"]),
+        person_id=int(car_private["person_id"]),
         name=name,
         phone=phone,
         email=email,
-        opt_in_future=opt_in_future
+        opt_in_future=opt_in_future,
     )
-    update_show_car_details(show_car_id=int(car["id"]), year=year, make=make, model=model)
 
-    # Reload the row so the template reflects saved data
-    car2 = get_show_car_by_token(int(show["id"]), car_token)
+    update_show_car_details(
+        show_car_id=int(car_private["id"]),
+        year=year,
+        make=make,
+        model=model,
+    )
 
-    return render_template("checkin.html", show=show, car=car2, success="Check-in saved.")
+    # Reload and show success
+    car_private2 = get_show_car_private_by_token(int(show["id"]), car_token)
+    return render_template("checkin.html", show=show, car=car_private2, success="Check-in complete. You're all set!")
 
 # ----------------------------
 # QR VOTING (CATEGORY LOCKED)
@@ -259,7 +291,7 @@ def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
     if category_slug not in CATEGORY_SLUGS:
         return "Invalid category.", 404
 
-    car = get_show_car_by_token(int(show["id"]), car_token)
+    car = get_show_car_public_by_token(int(show["id"]), car_token)
     if not car:
         return "Car not found.", 404
 
@@ -267,13 +299,13 @@ def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
         return render_template("voting_closed.html", show=show)
 
     category_name = CATEGORY_SLUGS[category_slug]
-
     return render_template(
         "vote_qty.html",
         show=show,
         car=car,
         category_slug=category_slug,
-        category_name=category_name
+        category_name=category_name,
+        vote_price_cents=VOTE_PRICE_CENTS
     )
 
 @app.post("/create-checkout-session")
@@ -295,7 +327,7 @@ def create_checkout_session():
     if category_slug not in CATEGORY_SLUGS:
         return jsonify({"ok": False, "error": "Invalid category."}), 400
 
-    car = get_show_car_by_token(int(show["id"]), car_token)
+    car = get_show_car_public_by_token(int(show["id"]), car_token)
     if not car:
         return jsonify({"ok": False, "error": "Car not found."}), 404
 
@@ -308,21 +340,7 @@ def create_checkout_session():
         return jsonify({"ok": False, "error": "Vote quantity must be between 1 and 50."}), 400
 
     success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}"
-    cancel_url = _abs_url(
-        url_for(
-            "vote_qty_page",
-            show_slug=show_slug,
-            car_token=car_token,
-            category_slug=category_slug
-        )
-    )
-    
-#-------------------
-# to test stripe 
-#-------------------
-
-    print("SUCCESS_URL:", success_url)
-    print("CANCEL_URL:", cancel_url)
+    cancel_url = _abs_url(url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug))
 
     session_obj = stripe.checkout.Session.create(
         mode="payment",
@@ -332,7 +350,7 @@ def create_checkout_session():
                 "currency": "usd",
                 "unit_amount": VOTE_PRICE_CENTS,
                 "product_data": {
-                    "name": f"Vote - {CATEGORY_SLUGS[category_slug]} (Car #{car['car_number']})"
+                    "name": f"Vote – {CATEGORY_SLUGS[category_slug]} (Car #{car['car_number']})"
                 },
             },
             "quantity": vote_qty,
@@ -407,7 +425,7 @@ def admin_logout():
 
 @app.post("/admin/toggle-voting")
 def admin_toggle_voting():
-    if not session.get("admin_authed"):
+    if not _require_admin():
         return redirect(url_for("admin_page"))
     show = get_active_show()
     if show:
@@ -416,7 +434,7 @@ def admin_toggle_voting():
 
 @app.post("/admin/open-voting")
 def admin_open_voting():
-    if not session.get("admin_authed"):
+    if not _require_admin():
         return redirect(url_for("admin_page"))
     show = get_active_show()
     if show:
@@ -425,7 +443,7 @@ def admin_open_voting():
 
 @app.post("/admin/close-voting")
 def admin_close_voting():
-    if not session.get("admin_authed"):
+    if not _require_admin():
         return redirect(url_for("admin_page"))
     show = get_active_show()
     if show:
@@ -434,7 +452,7 @@ def admin_close_voting():
 
 @app.post("/admin/reset-votes")
 def admin_reset_votes():
-    if not session.get("admin_authed"):
+    if not _require_admin():
         return redirect(url_for("admin_page"))
     show = get_active_show()
     if show:
@@ -443,7 +461,7 @@ def admin_reset_votes():
 
 @app.get("/admin/leaderboard")
 def admin_leaderboard():
-    if not session.get("admin_authed"):
+    if not _require_admin():
         return redirect(url_for("admin_page"))
 
     show = get_active_show()
@@ -457,7 +475,7 @@ def admin_leaderboard():
 
 @app.get("/admin/export-votes.csv")
 def admin_export_votes():
-    if not session.get("admin_authed"):
+    if not _require_admin():
         return redirect(url_for("admin_page"))
 
     show = get_active_show()
@@ -484,21 +502,25 @@ def admin_export_votes():
     mem.seek(0)
     return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="votes_export.csv")
 
-# Placeholder car generator (pre-print)
+# ----------------------------
+# ADMIN: PLACEHOLDER CARS (pre-print tokens)
+# ----------------------------
 @app.get("/admin/placeholders")
-def admin_placeholders_page():
-    if not session.get("admin_authed"):
+def admin_placeholders():
+    if not _require_admin():
         return redirect(url_for("admin_page"))
 
     show = get_active_show()
     if not show:
         return "No active show.", 500
 
-    return render_template("admin_placeholders.html", show=show)
+    # show existing cars list to help you print/manage
+    cars = list_show_cars_public(int(show["id"]))
+    return render_template("admin_placeholders.html", show=show, cars=cars)
 
-@app.post("/admin/placeholders")
+@app.post("/admin/placeholders/create")
 def admin_placeholders_create():
-    if not session.get("admin_authed"):
+    if not _require_admin():
         return redirect(url_for("admin_page"))
 
     show = get_active_show()
@@ -506,30 +528,92 @@ def admin_placeholders_create():
         return "No active show.", 500
 
     start_raw = request.form.get("start_number", "1").strip()
-    count_raw = request.form.get("count", "100").strip()
+    count_raw = request.form.get("count", "50").strip()
 
     try:
         start_number = int(start_raw)
         count = int(count_raw)
+        if start_number < 1 or count < 1 or count > 1000:
+            raise ValueError()
     except ValueError:
-        return render_template("admin_placeholders.html", show=show, error="Start and count must be numbers.")
+        flash("Invalid placeholder range. Count must be 1–1000.", "error")
+        return redirect(url_for("admin_placeholders"))
 
-    if start_number < 1:
-        return render_template("admin_placeholders.html", show=show, error="Start number must be at least 1.")
-    if count < 1 or count > 2000:
-        return render_template("admin_placeholders.html", show=show, error="Count must be between 1 and 2000.")
-
-    created = create_placeholder_cars(int(show["id"]), start_number, count)
-
-    return render_template(
-        "admin_placeholders.html",
-        show=show,
-        success=f"Created {created} placeholder cars (skipped any that already existed)."
-    )
+    created = create_placeholder_cars(int(show["id"]), start_number=start_number, count=count)
+    flash(f"Created {created} placeholder cars.", "ok")
+    return redirect(url_for("admin_placeholders"))
 
 # ----------------------------
-# RUN (RAILWAY-READY)
+# ADMIN: SPONSORS
+# ----------------------------
+@app.get("/admin/sponsors")
+def admin_sponsors():
+    if not _require_admin():
+        return redirect(url_for("admin_page"))
+
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    title_sponsor, sponsors = get_show_sponsors(int(show["id"]))
+    return render_template("admin_sponsors.html", show=show, title_sponsor=title_sponsor, sponsors=sponsors)
+
+@app.post("/admin/sponsors/add")
+def admin_sponsors_add():
+    if not _require_admin():
+        return redirect(url_for("admin_page"))
+
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    name = request.form.get("name", "").strip()
+    logo_path = request.form.get("logo_path", "").strip()  # e.g. img/sponsors/acme.png
+    website_url = request.form.get("website_url", "").strip()
+    placement = request.form.get("placement", "standard").strip()
+    sort_order_raw = request.form.get("sort_order", "100").strip()
+
+    if not name:
+        flash("Sponsor name is required.", "error")
+        return redirect(url_for("admin_sponsors"))
+
+    try:
+        sort_order = int(sort_order_raw)
+    except ValueError:
+        sort_order = 100
+
+    sponsor_id = upsert_sponsor(name=name, logo_path=logo_path, website_url=website_url)
+
+    if placement == "title":
+        set_title_sponsor(int(show["id"]), sponsor_id)
+    else:
+        attach_sponsor_to_show(int(show["id"]), sponsor_id, placement="standard", sort_order=sort_order)
+
+    flash("Sponsor saved.", "ok")
+    return redirect(url_for("admin_sponsors"))
+
+@app.post("/admin/sponsors/remove")
+def admin_sponsors_remove():
+    if not _require_admin():
+        return redirect(url_for("admin_page"))
+
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    sponsor_id_raw = request.form.get("sponsor_id", "").strip()
+    try:
+        sponsor_id = int(sponsor_id_raw)
+    except ValueError:
+        return redirect(url_for("admin_sponsors"))
+
+    remove_sponsor_from_show(int(show["id"]), sponsor_id)
+    flash("Sponsor removed from show.", "ok")
+    return redirect(url_for("admin_sponsors"))
+
+# ----------------------------
+# RUN
 # ----------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
+    port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)

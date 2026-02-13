@@ -31,9 +31,7 @@
         {% if login_error %}
           <div class="text-sm text-red-700">{{ login_error }}</div>
         {% endif %}
-        <button class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90" type="submit">
-          Sign in
-        </button>
+        <button class="btn btn-primary" type="submit">Sign in</button>
       </form>
     </div>
   {% else %}
@@ -46,34 +44,24 @@
             <div class="mt-1 text-2xl font-semibold">
               {% if show and show["voting_open"] == 1 %}Open{% else %}Closed{% endif %}
             </div>
-            <div class="mt-2 text-sm text-slate-600">
-              One-click control for pausing and resuming voting.
-            </div>
+            <div class="mt-2 text-sm text-slate-600">One-click control for pausing and resuming voting.</div>
           </div>
 
           <div class="flex flex-wrap gap-2">
             <form method="POST" action="{{ url_for('admin_toggle_voting') }}">
-              <button class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90" type="submit">
-                Toggle voting
-              </button>
+              <button class="btn btn-primary" type="submit">Toggle voting</button>
             </form>
 
             <form method="POST" action="{{ url_for('admin_open_voting') }}">
-              <button class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" type="submit">
-                Open voting
-              </button>
+              <button class="btn btn-outline" type="submit">Open voting</button>
             </form>
 
             <form method="POST" action="{{ url_for('admin_close_voting') }}">
-              <button class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" type="submit">
-                Close voting
-              </button>
+              <button class="btn btn-outline" type="submit">Close voting</button>
             </form>
 
             <form method="POST" action="{{ url_for('admin_logout') }}">
-              <button class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" type="submit">
-                Sign out
-              </button>
+              <button class="btn btn-outline" type="submit">Sign out</button>
             </form>
           </div>
         </div>
@@ -83,26 +71,14 @@
         <div class="text-xs font-semibold text-slate-500">ACTIONS</div>
 
         <div class="mt-4 flex flex-wrap gap-3">
-          <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
-             href="{{ url_for('admin_leaderboard') }}">
-            View leaderboard
-          </a>
-
-          <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
-             href="{{ url_for('admin_placeholders_page') }}">
-            Placeholder cars (pre-print)
-          </a>
-
-          <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
-             href="{{ url_for('admin_export_votes') }}">
-            Export votes CSV
-          </a>
+          <a class="btn btn-outline" href="{{ url_for('admin_leaderboard') }}">View leaderboard</a>
+          <a class="btn btn-outline" href="{{ url_for('admin_export_votes') }}">Export votes CSV</a>
+          <a class="btn btn-outline" href="{{ url_for('admin_sponsors') }}">Sponsors</a>
+          <a class="btn btn-outline" href="{{ url_for('admin_placeholders') }}">Placeholder cars</a>
 
           <form method="POST" action="{{ url_for('admin_reset_votes') }}"
                 onsubmit="return confirm('Reset ALL votes for the active show? This cannot be undone.');">
-            <button class="px-4 py-2 rounded-xl border border-red-200 text-red-700 hover:bg-red-50" type="submit">
-              Reset votes
-            </button>
+            <button class="btn btn-outline border-red-200 text-red-700 hover:bg-red-50" type="submit">Reset votes</button>
           </form>
         </div>
 

@@ -1,27 +1,21 @@
 {% extends "base.html" %}
-{% set title = "Vote Complete • Karman Kar Shows & Events" %}
+{% set title = "Thank You • Karman Kar Shows & Events" %}
 
 {% block content %}
 <div class="max-w-2xl">
   <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs">
-      Payment confirmed
+      Success
     </div>
-    <h1 class="mt-4 text-3xl font-semibold tracking-tight">Votes submitted</h1>
-    <p class="mt-2 text-slate-600">Thank you for supporting the show.</p>
+    <h1 class="mt-4 text-3xl font-semibold tracking-tight">Votes recorded</h1>
+    <p class="mt-3 text-slate-600">Thanks for supporting the show and the cause.</p>
 
-    {% if active_show %}
-      <div class="mt-6 flex flex-wrap gap-3">
-        <a class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90"
-           href="{{ url_for('show_page', slug=active_show['slug']) }}">
-          Back to show
-        </a>
-        <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
-           href="{{ url_for('home') }}">
-          Home
-        </a>
-      </div>
-    {% endif %}
+    <div class="mt-6 flex flex-wrap gap-3">
+      <a class="btn btn-primary" href="{{ url_for('home') }}">Home</a>
+      {% if active_show %}
+        <a class="btn btn-outline" href="{{ url_for('show_page', slug=active_show['slug']) }}">Back to show</a>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}

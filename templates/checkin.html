@@ -1,21 +1,13 @@
 {% extends "base.html" %}
-{% set title = "Check-In • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
+{% set title = "Owner Check-In • " ~ show["title"] %}
 
 {% block content %}
 <div class="max-w-3xl">
-  <div class="flex items-end justify-between gap-4">
-    <div>
-      <div class="text-xs font-semibold text-slate-500">STAFF</div>
-      <h1 class="mt-1 text-3xl font-semibold tracking-tight">Car Check-In</h1>
-      <p class="mt-2 text-slate-600">Capture owner info for Car #{{ car["car_number"] }}.</p>
-    </div>
-    {% if show %}
-      <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
-         href="{{ url_for('show_page', slug=show['slug']) }}">
-        Back to show
-      </a>
-    {% endif %}
-  </div>
+  <div class="text-xs font-semibold text-slate-500">OWNER CHECK-IN</div>
+  <h1 class="mt-1 text-3xl font-semibold tracking-tight">Car #{{ car["car_number"] }}</h1>
+  <p class="mt-2 text-slate-600">
+    This page is for the car owner to enter details. Phone/email are stored privately and never shown publicly.
+  </p>
 
   {% if error %}
     <div class="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">{{ error }}</div>
@@ -28,59 +20,44 @@
     <form method="POST" class="grid gap-6">
       <div class="grid gap-4 md:grid-cols-2">
         <div>
-          <label class="text-sm font-semibold">Name *</label>
-          <input name="name" value="{{ car['owner_name'] or '' }}"
-                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+          <label class="text-sm font-semibold">Owner name *</label>
+          <input name="name" value="{{ car['owner_name'] or '' }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
         </div>
-
-        <div>
-          <label class="text-sm font-semibold">Car number</label>
-          <input value="{{ car['car_number'] }}" disabled
-                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3 bg-slate-50">
-        </div>
-
         <div>
           <label class="text-sm font-semibold">Phone *</label>
-          <input name="phone" value="{{ car['owner_phone'] or '' }}"
-                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+          <input name="phone" value="{{ car['owner_phone'] or '' }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
         </div>
-
         <div>
           <label class="text-sm font-semibold">Email *</label>
-          <input name="email" type="email" value="{{ car['owner_email'] or '' }}"
-                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+          <input name="email" type="email" value="{{ car['owner_email'] or '' }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+        </div>
+        <div class="flex items-center mt-6">
+          <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 w-full">
+            <input type="checkbox" name="opt_in_future" class="mt-1" {% if car['opt_in_future'] == 1 %}checked{% endif %}>
+            <div>
+              <div class="font-semibold">Contact me about future events</div>
+              <div class="text-sm text-slate-600">Optional opt-in</div>
+            </div>
+          </label>
         </div>
       </div>
 
       <div class="grid gap-4 md:grid-cols-3">
         <div>
           <label class="text-sm font-semibold">Year *</label>
-          <input name="year" value="{{ car['year'] or '' }}"
-                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+          <input name="year" value="{{ car['year'] or '' }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
         </div>
         <div>
           <label class="text-sm font-semibold">Make *</label>
-          <input name="make" value="{{ car['make'] or '' }}"
-                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+          <input name="make" value="{{ car['make'] or '' }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
         </div>
         <div>
           <label class="text-sm font-semibold">Model *</label>
-          <input name="model" value="{{ car['model'] or '' }}"
-                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+          <input name="model" value="{{ car['model'] or '' }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
         </div>
       </div>
 
-      <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <input type="checkbox" name="opt_in_future" class="mt-1" {% if car["opt_in_future"] == 1 %}checked{% endif %}>
-        <div>
-          <div class="font-semibold">Contact me about future events</div>
-          <div class="text-sm text-slate-600">Optional. If checked, we can send info about upcoming shows.</div>
-        </div>
-      </label>
-
-      <button class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90 w-fit" type="submit">
-        Save check-in
-      </button>
+      <button class="btn btn-primary w-fit" type="submit">Save check-in</button>
     </form>
   </div>
 </div>

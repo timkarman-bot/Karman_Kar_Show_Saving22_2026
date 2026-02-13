@@ -1,27 +1,12 @@
 {% extends "base.html" %}
-{% set title = "Vote Complete • Karman Kar Shows & Events" %}
+{% set title = "Payment Not Complete • Karman Kar Shows & Events" %}
 
 {% block content %}
 <div class="max-w-2xl">
   <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
-    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs">
-      Payment confirmed
-    </div>
-    <h1 class="mt-4 text-3xl font-semibold tracking-tight">Votes submitted</h1>
-    <p class="mt-2 text-slate-600">Thank you for supporting the show.</p>
-
-    {% if active_show %}
-      <div class="mt-6 flex flex-wrap gap-3">
-        <a class="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90"
-           href="{{ url_for('show_page', slug=active_show['slug']) }}">
-          Back to show
-        </a>
-        <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
-           href="{{ url_for('home') }}">
-          Home
-        </a>
-      </div>
-    {% endif %}
+    <h1 class="text-3xl font-semibold tracking-tight">Payment not completed</h1>
+    <p class="mt-3 text-slate-600">Your payment didn’t complete, so votes were not recorded.</p>
+    <a class="mt-6 inline-block btn btn-primary" href="{{ url_for('home') }}">Go home</a>
   </div>
 </div>
 {% endblock %}

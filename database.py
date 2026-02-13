@@ -5,15 +5,18 @@ from typing import Any, Dict, List, Optional, Tuple
 
 DB_PATH = os.getenv("DB_PATH", "app.db")
 
+
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_db() -> None:
     conn = _conn()
     cur = conn.cursor()
 
+    # Shows
     cur.execute("""
         CREATE TABLE IF NOT EXISTS shows (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,6 +35,7 @@ def init_db() -> None:
         )
     """)
 
+    # People
     cur.execute("""
         CREATE TABLE IF NOT EXISTS people (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +47,7 @@ def init_db() -> None:
         )
     """)
 
+    # Cars in a show
     cur.execute("""
         CREATE TABLE IF NOT EXISTS show_cars (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,6 +65,7 @@ def init_db() -> None:
         )
     """)
 
+    # Votes
     cur.execute("""
         CREATE TABLE IF NOT EXISTS votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,8 +81,35 @@ def init_db() -> None:
         )
     """)
 
+    # Sponsors master
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sponsors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            logo_path TEXT,
+            website_url TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+
+    # Sponsors attached to a show
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS show_sponsors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            show_id INTEGER NOT NULL,
+            sponsor_id INTEGER NOT NULL,
+            placement TEXT NOT NULL DEFAULT 'standard', -- 'title' or 'standard'
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(show_id, sponsor_id),
+            FOREIGN KEY(show_id) REFERENCES shows(id),
+            FOREIGN KEY(sponsor_id) REFERENCES sponsors(id)
+        )
+    """)
+
     conn.commit()
     conn.close()
+
 
 # ----------------------------
 # Shows
@@ -114,12 +147,14 @@ def ensure_default_show(default_show: Dict[str, Any]) -> None:
     conn.commit()
     conn.close()
 
+
 def get_active_show() -> Optional[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
     row = cur.execute("SELECT * FROM shows WHERE is_active = 1 LIMIT 1").fetchone()
     conn.close()
     return row
+
 
 def get_show_by_slug(slug: str) -> Optional[sqlite3.Row]:
     conn = _conn()
@@ -128,12 +163,14 @@ def get_show_by_slug(slug: str) -> Optional[sqlite3.Row]:
     conn.close()
     return row
 
+
 def set_show_voting_open(show_id: int, voting_open: bool) -> None:
     conn = _conn()
     cur = conn.cursor()
     cur.execute("UPDATE shows SET voting_open = ? WHERE id = ?", (1 if voting_open else 0, show_id))
     conn.commit()
     conn.close()
+
 
 def toggle_show_voting(show_id: int) -> None:
     conn = _conn()
@@ -142,8 +179,9 @@ def toggle_show_voting(show_id: int) -> None:
     conn.commit()
     conn.close()
 
+
 # ----------------------------
-# Registration
+# Registration / People
 # ----------------------------
 def create_person(name: str, phone: str, email: str, opt_in_future: bool) -> int:
     conn = _conn()
@@ -157,6 +195,7 @@ def create_person(name: str, phone: str, email: str, opt_in_future: bool) -> int
     conn.close()
     return pid
 
+
 def update_person(person_id: int, name: str, phone: str, email: str, opt_in_future: bool) -> None:
     conn = _conn()
     cur = conn.cursor()
@@ -168,8 +207,10 @@ def update_person(person_id: int, name: str, phone: str, email: str, opt_in_futu
     conn.commit()
     conn.close()
 
+
 def _new_car_token() -> str:
     return secrets.token_urlsafe(12)
+
 
 def create_show_car(
     show_id: int,
@@ -196,6 +237,7 @@ def create_show_car(
         conn.close()
         raise ValueError("That car number is already registered for this show.") from e
 
+
 def update_show_car_details(show_car_id: int, year: str, make: str, model: str) -> None:
     conn = _conn()
     cur = conn.cursor()
@@ -207,7 +249,30 @@ def update_show_car_details(show_car_id: int, year: str, make: str, model: str) 
     conn.commit()
     conn.close()
 
-def get_show_car_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]:
+
+def get_show_car_public_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]:
+    """
+    Public-safe view (NO phone/email).
+    """
+    conn = _conn()
+    cur = conn.cursor()
+    row = cur.execute("""
+        SELECT
+            sc.*,
+            p.name as owner_name
+        FROM show_cars sc
+        JOIN people p ON p.id = sc.person_id
+        WHERE sc.show_id = ? AND sc.car_token = ?
+        LIMIT 1
+    """, (show_id, car_token)).fetchone()
+    conn.close()
+    return row
+
+
+def get_show_car_private_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]:
+    """
+    Private view (includes phone/email) for admin/checkin/export.
+    """
     conn = _conn()
     cur = conn.cursor()
     row = cur.execute("""
@@ -225,28 +290,33 @@ def get_show_car_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]
     conn.close()
     return row
 
-#-----------------------------
-# Public Safe
-#-----------------------------
 
-def get_public_show_car_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]:
-    """
-    Public-safe car lookup: includes owner_name only (no phone/email).
-    """
+def get_show_car_by_number(show_id: int, car_number: int) -> Optional[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
     row = cur.execute("""
-        SELECT
-            sc.*,
-            p.name as owner_name
+        SELECT sc.*, p.name as owner_name
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
-        WHERE sc.show_id = ? AND sc.car_token = ?
+        WHERE sc.show_id = ? AND sc.car_number = ?
         LIMIT 1
-    """, (show_id, car_token)).fetchone()
+    """, (show_id, car_number)).fetchone()
     conn.close()
     return row
 
+
+def list_show_cars_public(show_id: int) -> List[sqlite3.Row]:
+    conn = _conn()
+    cur = conn.cursor()
+    rows = cur.execute("""
+        SELECT sc.car_number, sc.year, sc.make, sc.model, sc.car_token, p.name as owner_name
+        FROM show_cars sc
+        JOIN people p ON p.id = sc.person_id
+        WHERE sc.show_id = ?
+        ORDER BY sc.car_number ASC
+    """, (show_id,)).fetchall()
+    conn.close()
+    return rows
 
 
 # ----------------------------
@@ -269,7 +339,7 @@ def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
         if exists:
             continue
 
-        # placeholder person (FK required)
+        # placeholder person (FK required; empty strings allowed)
         cur.execute(
             "INSERT INTO people (name, phone, email, opt_in_future) VALUES (?, ?, ?, ?)",
             ("", "", "", 0),
@@ -286,6 +356,7 @@ def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
     conn.commit()
     conn.close()
     return created
+
 
 # ----------------------------
 # Voting
@@ -311,12 +382,14 @@ def record_paid_votes(
     finally:
         conn.close()
 
+
 def reset_votes_for_show(show_id: int) -> None:
     conn = _conn()
     cur = conn.cursor()
     cur.execute("DELETE FROM votes WHERE show_id = ?", (show_id,))
     conn.commit()
     conn.close()
+
 
 def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
@@ -345,6 +418,7 @@ def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
     conn.close()
     return rows
 
+
 def leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int, int]]]:
     conn = _conn()
     cur = conn.cursor()
@@ -364,6 +438,7 @@ def leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int, int]]]:
         out[r["category"]].append((int(r["car_number"]), int(r["total_votes"] or 0)))
     return out
 
+
 def leaderboard_overall(show_id: int) -> List[Tuple[int, int]]:
     conn = _conn()
     cur = conn.cursor()
@@ -377,3 +452,98 @@ def leaderboard_overall(show_id: int) -> List[Tuple[int, int]]:
     """, (show_id,)).fetchall()
     conn.close()
     return [(int(r["car_number"]), int(r["total_votes"] or 0)) for r in rows]
+
+
+# ----------------------------
+# Sponsors
+# ----------------------------
+def upsert_sponsor(name: str, logo_path: str = "", website_url: str = "") -> int:
+    conn = _conn()
+    cur = conn.cursor()
+
+    existing = cur.execute("SELECT id FROM sponsors WHERE name = ? LIMIT 1", (name,)).fetchone()
+    if existing:
+        cur.execute("""
+            UPDATE sponsors SET logo_path = ?, website_url = ?
+            WHERE id = ?
+        """, (logo_path, website_url, int(existing["id"])))
+        conn.commit()
+        conn.close()
+        return int(existing["id"])
+
+    cur.execute("""
+        INSERT INTO sponsors (name, logo_path, website_url)
+        VALUES (?, ?, ?)
+    """, (name, logo_path, website_url))
+    conn.commit()
+    sid = int(cur.lastrowid)
+    conn.close()
+    return sid
+
+
+def attach_sponsor_to_show(show_id: int, sponsor_id: int, placement: str = "standard", sort_order: int = 100) -> None:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO show_sponsors (show_id, sponsor_id, placement, sort_order)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(show_id, sponsor_id) DO UPDATE SET
+          placement=excluded.placement,
+          sort_order=excluded.sort_order
+    """, (show_id, sponsor_id, placement, sort_order))
+    conn.commit()
+    conn.close()
+
+
+def remove_sponsor_from_show(show_id: int, sponsor_id: int) -> None:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM show_sponsors WHERE show_id = ? AND sponsor_id = ?", (show_id, sponsor_id))
+    conn.commit()
+    conn.close()
+
+
+def set_title_sponsor(show_id: int, sponsor_id: int) -> None:
+    """
+    Ensures only one title sponsor per show by clearing any existing title placements.
+    """
+    conn = _conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        UPDATE show_sponsors
+        SET placement = 'standard'
+        WHERE show_id = ? AND placement = 'title'
+    """, (show_id,))
+
+    attach_sponsor_to_show(show_id, sponsor_id, placement="title", sort_order=0)
+    conn.commit()
+    conn.close()
+
+
+def get_show_sponsors(show_id: int) -> Tuple[Optional[sqlite3.Row], List[sqlite3.Row]]:
+    """
+    Returns (title_sponsor_row_or_none, [standard_sponsors...])
+    """
+    conn = _conn()
+    cur = conn.cursor()
+
+    title = cur.execute("""
+        SELECT s.*
+        FROM show_sponsors ss
+        JOIN sponsors s ON s.id = ss.sponsor_id
+        WHERE ss.show_id = ? AND ss.placement = 'title'
+        ORDER BY ss.sort_order ASC
+        LIMIT 1
+    """, (show_id,)).fetchone()
+
+    others = cur.execute("""
+        SELECT s.*, ss.sort_order
+        FROM show_sponsors ss
+        JOIN sponsors s ON s.id = ss.sponsor_id
+        WHERE ss.show_id = ? AND ss.placement = 'standard'
+        ORDER BY ss.sort_order ASC, s.name ASC
+    """, (show_id,)).fetchall()
+
+    conn.close()
+    return title, others

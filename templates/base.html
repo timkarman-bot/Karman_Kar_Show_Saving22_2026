@@ -8,6 +8,15 @@
 
   <style>
     .glass { background: rgba(255,255,255,.78); backdrop-filter: blur(10px); }
+    .btn { border-radius: 1rem; padding: .85rem 1.1rem; font-weight: 600; }
+    .btn-primary { background: #0f172a; color: #fff; }
+    .btn-primary:hover { opacity: .92; }
+    .btn-outline { background: #fff; border: 1px solid #e2e8f0; }
+    .btn-outline:hover { background: #f8fafc; }
+    .ring-strong { box-shadow: 0 0 0 4px rgba(15,23,42,.25); }
+    .print-border { border: 2px solid #0f172a; }
+    .print-border-soft { border: 1px solid #0f172a; }
+    .qr-frame { border: 2px solid #0f172a; background: #fff; }
   </style>
 </head>
 
@@ -42,7 +51,7 @@
 
         <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('events') }}">Upcoming</a>
 
-        {% if session.get("admin_authed") %}
+        {% if is_admin %}
           <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('admin_page') }}">Admin</a>
         {% endif %}
       </nav>
@@ -50,12 +59,19 @@
   </header>
 
   <main class="mx-auto max-w-6xl px-4 py-10">
+    {% if get_flashed_messages() %}
+      <div class="mb-6 space-y-2">
+        {% for msg in get_flashed_messages() %}
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 text-sm">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
 
   <footer class="border-t border-slate-200/70 bg-white/70">
     <div class="mx-auto max-w-6xl px-4 py-8 text-sm text-slate-600 flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
-      <div>© {{ 2026 }} Karman Kar Shows & Events</div>
+      <div>© 2026 Karman Kar Shows & Events</div>
       <div class="text-slate-500">Built to support veterans, families, and our community</div>
     </div>
   </footer>
