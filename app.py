@@ -6,6 +6,8 @@ import os
 import io
 import csv
 from typing import Dict
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import stripe
 from flask import (
@@ -54,6 +56,14 @@ from database import (
     attach_sponsor_to_show,
     remove_sponsor_from_show,
     set_title_sponsor,
+    # attendee capture + donation
+    create_attendee,
+    record_field_metric,
+    create_donation_row,
+    attach_stripe_session_to_donation,
+    mark_donation_paid,
+    # waiver tracking
+    waiver_mark_received,
 )
 
 # ----------------------------
@@ -89,7 +99,7 @@ DEFAULT_SHOW = {
     "time": "Cars arrive at 10:00 AM",
     "location_name": "Children’s Mercy Park",
     "address": "1 Sporting Way, Kansas City, KS 66111",
-    "benefiting": "Saving 22 / 22 Survivor Awareness",
+    "benefiting": "Saving22 / 22 Survivor Awareness",
     "suggested_donation": "$35 suggested donation for show cars",
     "description": "A charity car show supporting veteran suicide awareness with judged certificates by branch favorites and People’s Choice.",
 }
@@ -144,6 +154,33 @@ def require_admin(view_func):
     return wrapped
 
 
+def _maybe_auto_close_voting() -> None:
+    """
+    If VOTING_END is set and we've passed it (America/Chicago), automatically close voting.
+    Format: "YYYY-MM-DD HH:MM"
+    """
+    end_raw = os.getenv("VOTING_END", "").strip()
+    if not end_raw:
+        return
+
+    show = get_active_show()
+    if not show or int(show["voting_open"]) != 1:
+        return
+
+    try:
+        end_dt = datetime.strptime(end_raw, "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("America/Chicago"))
+        now_dt = datetime.now(ZoneInfo("America/Chicago"))
+        if now_dt >= end_dt:
+            set_show_voting_open(int(show["id"]), False)
+    except Exception:
+        return
+
+
+@app.before_request
+def before_request():
+    _maybe_auto_close_voting()
+
+
 # ----------------------------
 # GLOBAL TEMPLATE VARS
 # ----------------------------
@@ -175,7 +212,6 @@ def home():
         return "No active show configured.", 500
     return render_template("home.html", show=show)
 
-# Added to print voting instructions 2/13/2026
 
 @app.get("/instructions/<show_slug>")
 def voting_instructions(show_slug: str):
@@ -183,6 +219,7 @@ def voting_instructions(show_slug: str):
     if not show:
         return "Show not found.", 404
     return render_template("voting_instructions.html", show=show)
+
 
 @app.get("/events")
 def events():
@@ -327,6 +364,179 @@ def checkin_submit(show_slug: str, car_token: str):
 
 
 # ----------------------------
+# WAIVER (PRINTABLE, PAPER-FIRST)
+# ----------------------------
+@app.get("/waiver/<show_slug>/<car_token>")
+def waiver_print(show_slug: str, car_token: str):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return "Show not found.", 404
+
+    car = get_show_car_private_by_token(int(show["id"]), car_token)
+    if not car:
+        return "Car not found.", 404
+
+    return render_template("waiver_print.html", show=show, car=car)
+
+
+# ----------------------------
+# ATTENDEE CAPTURE + OPTIONAL DONATION
+# ----------------------------
+@app.get("/attend/<show_slug>")
+def attendee_page(show_slug: str):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return "Show not found.", 404
+    return render_template("attendee.html", show=show)
+
+
+@app.post("/attend/<show_slug>")
+def attendee_submit(show_slug: str):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return "Show not found.", 404
+
+    first_name = request.form.get("first_name", "").strip()
+    last_name = request.form.get("last_name", "").strip()
+    phone = request.form.get("phone", "").strip()
+    email = request.form.get("email", "").strip()
+    zip_code = request.form.get("zip", "").strip()
+
+    sponsor_opt_in = request.form.get("sponsor_opt_in", "") == "on"
+    updates_opt_in = request.form.get("updates_opt_in", "") == "on"
+
+    if not (first_name and last_name):
+        return render_template("attendee.html", show=show, error="First and last name are required.")
+
+    consent_text = (
+        "By selecting these options, you agree Karman Kar Shows & Events may contact you about the event and, "
+        "if selected, share sponsor offers. Msg/data rates may apply. Opt out anytime."
+    )
+    consent_version = "2026-02-24"
+
+    attendee_id = create_attendee(
+        show_id=int(show["id"]),
+        first_name=first_name,
+        last_name=last_name,
+        phone=phone,
+        email=email,
+        zip_code=zip_code,
+        sponsor_opt_in=sponsor_opt_in,
+        updates_opt_in=updates_opt_in,
+        consent_text=consent_text,
+        consent_version=consent_version,
+    )
+
+    record_field_metric(int(show["id"]), "phone", bool(phone))
+    record_field_metric(int(show["id"]), "email", bool(email))
+
+    return redirect(url_for("attendee_donate_page", show_slug=show_slug, attendee_id=attendee_id))
+
+
+@app.get("/attend/<show_slug>/donate/<int:attendee_id>")
+def attendee_donate_page(show_slug: str, attendee_id: int):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return "Show not found.", 404
+    return render_template("attendee_donate.html", show=show, attendee_id=attendee_id)
+
+
+@app.post("/attend/create-donation-checkout")
+def create_donation_checkout():
+    _require_stripe()
+
+    show_slug = request.form.get("show_slug", "").strip()
+    attendee_id_raw = request.form.get("attendee_id", "").strip()
+    amount_raw = request.form.get("amount_dollars", "").strip()
+
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return jsonify({"ok": False, "error": "Show not found."}), 404
+
+    try:
+        attendee_id = int(attendee_id_raw)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Invalid attendee."}), 400
+
+    try:
+        dollars = float(amount_raw)
+    except ValueError:
+        dollars = 0.0
+
+    amount_cents = int(round(max(dollars, 0.0) * 100))
+
+    if amount_cents == 0:
+        create_donation_row(int(show["id"]), attendee_id, 0, "skipped")
+        return jsonify(
+            {
+                "ok": True,
+                "skipped": True,
+                "redirect_url": url_for("attendee_done", show_slug=show_slug),
+            }
+        )
+
+    donation_id = create_donation_row(int(show["id"]), attendee_id, amount_cents, "pending")
+
+    success_url = _abs_url(url_for("donation_success")) + "?session_id={CHECKOUT_SESSION_ID}"
+    cancel_url = _abs_url(url_for("attendee_donate_page", show_slug=show_slug, attendee_id=attendee_id))
+
+    session_obj = stripe.checkout.Session.create(
+        mode="payment",
+        payment_method_types=["card"],
+        line_items=[
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": amount_cents,
+                    "product_data": {"name": f"Donation – {show['title']}"},
+                },
+                "quantity": 1,
+            }
+        ],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={
+            "show_id": str(show["id"]),
+            "donation_id": str(donation_id),
+            "show_slug": show_slug,
+        },
+    )
+
+    attach_stripe_session_to_donation(donation_id, session_obj.id)
+    return jsonify({"ok": True, "checkout_url": session_obj.url})
+
+
+@app.get("/donation-success")
+def donation_success():
+    _require_stripe()
+
+    session_id = request.args.get("session_id", "").strip()
+    if not session_id:
+        return "Missing session_id.", 400
+
+    sess = stripe.checkout.Session.retrieve(session_id)
+    if sess.payment_status != "paid":
+        return render_template("payment_not_complete.html")
+
+    mark_donation_paid(sess.id)
+
+    show_slug = (sess.metadata or {}).get("show_slug", "")
+    if not show_slug:
+        show = get_active_show()
+        show_slug = show["slug"] if show else ""
+
+    return redirect(url_for("attendee_done", show_slug=show_slug))
+
+
+@app.get("/attend/<show_slug>/done")
+def attendee_done(show_slug: str):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return "Show not found.", 404
+    return render_template("attendee_done.html", show=show)
+
+
+# ----------------------------
 # QR VOTING (CATEGORY LOCKED)
 # ----------------------------
 @app.get("/v/<show_slug>/<car_token>/<category_slug>")
@@ -387,7 +597,6 @@ def create_checkout_session():
     if vote_qty < 1 or vote_qty > 50:
         return jsonify({"ok": False, "error": "Vote quantity must be between 1 and 50."}), 400
 
-    # IMPORTANT: url_for() returns '/path' so _abs_url() gets a leading slash.
     success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}"
     cancel_url = _abs_url(
         url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug)
@@ -679,6 +888,24 @@ def admin_placeholders_create():
 
     created = create_placeholder_cars(int(show["id"]), start_number=start_number, count=count)
     flash(f"Created {created} placeholder cars.", "ok")
+    return redirect(url_for("admin_placeholders"))
+
+
+@app.post("/admin/waiver-received")
+@require_admin
+def admin_waiver_received():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    show_car_id_raw = request.form.get("show_car_id", "").strip()
+    try:
+        show_car_id = int(show_car_id_raw)
+    except ValueError:
+        return redirect(url_for("admin_placeholders"))
+
+    waiver_mark_received(int(show["id"]), show_car_id, received_by="admin")
+    flash("Waiver marked as received.", "ok")
     return redirect(url_for("admin_placeholders"))
 
 

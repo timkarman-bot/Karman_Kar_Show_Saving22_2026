@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% set title = "Waiver • " ~ show["title"] %}
+
+{% block content %}
+<style>
+  @media print {
+    header, footer, .no-print { display: none !important; }
+    main { padding: 0 !important; }
+    .print-page { box-shadow: none !important; border: none !important; }
+  }
+</style>
+
+<div class="no-print mb-4">
+  <button onclick="window.print()" class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90">
+    Print waiver
+  </button>
+</div>
+
+<section class="print-page rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
+  <div class="text-xs font-semibold text-slate-500">CAR SHOW PARTICIPANT</div>
+  <h1 class="mt-1 text-2xl font-semibold tracking-tight">Liability Waiver & Release</h1>
+  <div class="mt-2 text-sm text-slate-600">
+    {{ show["title"] }} • Car #{{ car["car_number"] }} • {{ car["year"] }} {{ car["make"] }} {{ car["model"] }}
+  </div>
+
+  <div class="mt-6 text-sm text-slate-800 space-y-4 leading-relaxed">
+    <p>
+      I, the undersigned participant (“Participant”), voluntarily choose to participate in this event (“Event”),
+      including entering a vehicle, displaying a vehicle, and being present on the Event premises. I understand that
+      participation involves inherent risks, including property damage, personal injury, illness, or death, which may
+      arise from vehicle movement, crowd conditions, weather, equipment, or the acts or omissions of others.
+    </p>
+
+    <p><span class="font-semibold">1) Assumption of Risk.</span> I knowingly and voluntarily assume all risks of participation, whether known or unknown, foreseeable or unforeseeable.</p>
+
+    <p><span class="font-semibold">2) Release of Liability.</span> To the fullest extent permitted by law, I release and discharge Karman Kar Shows & Events, Saving22, the venue/property owner, sponsors, vendors, volunteers, and their respective officers, employees, agents, and affiliates (“Released Parties”) from any and all claims, damages, or liabilities arising out of or relating to my participation, including claims based on ordinary negligence.</p>
+
+    <p><span class="font-semibold">3) Indemnification.</span> I agree to defend, indemnify, and hold harmless the Released Parties from and against any claims, damages, losses, or expenses (including reasonable attorneys’ fees) arising out of or relating to my participation, my vehicle, or my actions at the Event, including claims brought by third parties.</p>
+
+    <p><span class="font-semibold">4) Vehicle Responsibility.</span> I will operate my vehicle safely and follow on-site directions. I understand the Released Parties are not responsible for theft, vandalism, or damage.</p>
+
+    <p><span class="font-semibold">5) Compliance.</span> I agree to comply with posted rules, staff instructions, and applicable laws. Failure to comply may result in removal from the Event.</p>
+
+    <p><span class="font-semibold">6) Photo/Video Permission.</span> I grant permission for Event photos/video to be used for promotional purposes without compensation, unless I provide written notice to opt out.</p>
+
+    <p><span class="font-semibold">7) Severability.</span> If any part of this agreement is found unenforceable, the remaining portions remain in full force.</p>
+  </div>
+
+  <div class="mt-8 grid gap-4 text-sm">
+    <div class="grid grid-cols-2 gap-4">
+      <div class="border-b border-slate-400 py-2">Participant Name (print)</div>
+      <div class="border-b border-slate-400 py-2">Date</div>
+    </div>
+    <div class="grid grid-cols-2 gap-4">
+      <div class="border-b border-slate-400 py-2">Participant Signature</div>
+      <div class="border-b border-slate-400 py-2">Phone (optional)</div>
+    </div>
+    <div class="border-b border-slate-400 py-2">Email (optional)</div>
+  </div>
+
+  <div class="mt-6 text-xs text-slate-500">
+    This form is intended for participant acknowledgment. Consider attorney review for your venue/state requirements.
+  </div>
+</section>
+{% endblock %}

@@ -5,11 +5,8 @@ import io
 import csv
 import zipfile
 
-
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
-
-
 
 DB_PATH = os.getenv("DB_PATH", "app.db")
 
@@ -43,7 +40,7 @@ def init_db() -> None:
         )
     """)
 
-    # People
+    # People (car owners)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS people (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,6 +111,67 @@ def init_db() -> None:
             FOREIGN KEY(sponsor_id) REFERENCES sponsors(id)
         )
     """)
+
+    # Attendees (spectators/supporters)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS attendees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            show_id INTEGER NOT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            phone TEXT,
+            email TEXT,
+            zip TEXT,
+            sponsor_opt_in INTEGER NOT NULL DEFAULT 0,
+            updates_opt_in INTEGER NOT NULL DEFAULT 0,
+            consent_text TEXT,
+            consent_version TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(show_id) REFERENCES shows(id)
+        )
+    """)
+
+    # Donations (optional; $0 allowed)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS donations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            show_id INTEGER NOT NULL,
+            attendee_id INTEGER,
+            amount_cents INTEGER NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'USD',
+            status TEXT NOT NULL, -- 'skipped' | 'pending' | 'paid' | 'failed'
+            stripe_session_id TEXT UNIQUE,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(show_id) REFERENCES shows(id),
+            FOREIGN KEY(attendee_id) REFERENCES attendees(id)
+        )
+    """)
+
+    # Field metrics (to answer "how many skip phone/email")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS field_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            show_id INTEGER NOT NULL,
+            field_name TEXT NOT NULL,      -- 'phone' | 'email'
+            was_provided INTEGER NOT NULL, -- 1/0
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(show_id) REFERENCES shows(id)
+        )
+    """)
+
+    # Paper waiver tracking for cars
+    try:
+        cur.execute("ALTER TABLE show_cars ADD COLUMN waiver_received INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cur.execute("ALTER TABLE show_cars ADD COLUMN waiver_received_at TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cur.execute("ALTER TABLE show_cars ADD COLUMN waiver_received_by TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()
@@ -314,10 +372,24 @@ def get_show_car_by_number(show_id: int, car_number: int) -> Optional[sqlite3.Ro
 
 
 def list_show_cars_public(show_id: int) -> List[sqlite3.Row]:
+    """
+    Used by show page and admin placeholders.
+    Includes waiver fields but not phone/email.
+    """
     conn = _conn()
     cur = conn.cursor()
     rows = cur.execute("""
-        SELECT sc.car_number, sc.year, sc.make, sc.model, sc.car_token, p.name as owner_name
+        SELECT
+            sc.id,
+            sc.car_number,
+            sc.year,
+            sc.make,
+            sc.model,
+            sc.car_token,
+            sc.waiver_received,
+            sc.waiver_received_at,
+            sc.waiver_received_by,
+            p.name as owner_name
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ?
@@ -532,41 +604,43 @@ def set_title_sponsor(show_id: int, sponsor_id: int) -> None:
 def get_show_sponsors(show_id: int):
     """
     Returns (title_sponsor, sponsors)
-    - title_sponsor: dict | None
-    - sponsors: list[dict]
-    Always returns a 2-tuple, never None.
+    title_sponsor: dict | None
+    sponsors: list[dict]
     """
     conn = _conn()
     cur = conn.cursor()
 
-    # If your sponsors table isn't created yet, fail safe:
-    try:
-        rows = cur.execute("""
-            SELECT id, show_id, name, website, logo_path, is_title, sort_order
-            FROM sponsors
-            WHERE show_id = ?
-            ORDER BY is_title DESC, sort_order ASC, id ASC
-        """, (show_id,)).fetchall()
-    except sqlite3.OperationalError:
-        conn.close()
-        return None, []
+    rows = cur.execute("""
+        SELECT
+            s.id as sponsor_id,
+            s.name,
+            s.logo_path,
+            s.website_url,
+            ss.placement,
+            ss.sort_order
+        FROM show_sponsors ss
+        JOIN sponsors s ON s.id = ss.sponsor_id
+        WHERE ss.show_id = ?
+        ORDER BY
+            CASE WHEN ss.placement = 'title' THEN 0 ELSE 1 END,
+            ss.sort_order ASC,
+            s.id ASC
+    """, (show_id,)).fetchall()
 
     conn.close()
 
     title = None
     sponsors = []
-
     for r in rows:
         item = {
-            "id": r["id"],
-            "show_id": r["show_id"],
+            "id": int(r["sponsor_id"]),
             "name": r["name"],
-            "website": r["website"],
             "logo_path": r["logo_path"],
-            "is_title": int(r["is_title"] or 0),
+            "website_url": r["website_url"],
+            "placement": r["placement"],
             "sort_order": int(r["sort_order"] or 0),
         }
-        if item["is_title"] == 1 and title is None:
+        if item["placement"] == "title" and title is None:
             title = item
         else:
             sponsors.append(item)
@@ -574,51 +648,113 @@ def get_show_sponsors(show_id: int):
     return title, sponsors
 
 
-def export_people_rows_for_show(show_id: int) -> List[sqlite3.Row]:
-    """
-    People who have cars registered in this show (includes phone/email for admin export).
-    """
+# ----------------------------
+# Attendees + Donations + Metrics
+# ----------------------------
+def create_attendee(
+    show_id: int,
+    first_name: str,
+    last_name: str,
+    phone: str,
+    email: str,
+    zip_code: str,
+    sponsor_opt_in: bool,
+    updates_opt_in: bool,
+    consent_text: str,
+    consent_version: str,
+) -> int:
     conn = _conn()
     cur = conn.cursor()
-    rows = cur.execute("""
-        SELECT DISTINCT
-            p.*
-        FROM show_cars sc
-        JOIN people p ON p.id = sc.person_id
-        WHERE sc.show_id = ?
-        ORDER BY p.created_at ASC
-    """, (show_id,)).fetchall()
+    cur.execute("""
+        INSERT INTO attendees
+        (show_id, first_name, last_name, phone, email, zip, sponsor_opt_in, updates_opt_in, consent_text, consent_version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        show_id,
+        first_name,
+        last_name,
+        phone or None,
+        email or None,
+        zip_code or None,
+        1 if sponsor_opt_in else 0,
+        1 if updates_opt_in else 0,
+        consent_text,
+        consent_version,
+    ))
+    conn.commit()
+    aid = int(cur.lastrowid)
     conn.close()
-    return rows
+    return aid
 
 
-def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
+def record_field_metric(show_id: int, field_name: str, was_provided: bool) -> None:
     conn = _conn()
     cur = conn.cursor()
-    rows = cur.execute("""
-        SELECT
-            sc.*,
-            p.name as owner_name,
-            p.phone as owner_phone,
-            p.email as owner_email,
-            p.opt_in_future
-        FROM show_cars sc
-        JOIN people p ON p.id = sc.person_id
-        WHERE sc.show_id = ?
-        ORDER BY sc.car_number ASC
-    """, (show_id,)).fetchall()
+    cur.execute("""
+        INSERT INTO field_metrics (show_id, field_name, was_provided)
+        VALUES (?, ?, ?)
+    """, (show_id, field_name, 1 if was_provided else 0))
+    conn.commit()
     conn.close()
-    return rows
+
+
+def create_donation_row(show_id: int, attendee_id: int, amount_cents: int, status: str) -> int:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO donations (show_id, attendee_id, amount_cents, status)
+        VALUES (?, ?, ?, ?)
+    """, (show_id, attendee_id, int(amount_cents), status))
+    conn.commit()
+    did = int(cur.lastrowid)
+    conn.close()
+    return did
+
+
+def attach_stripe_session_to_donation(donation_id: int, stripe_session_id: str) -> None:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE donations
+        SET stripe_session_id = ?
+        WHERE id = ?
+    """, (stripe_session_id, donation_id))
+    conn.commit()
+    conn.close()
+
+
+def mark_donation_paid(stripe_session_id: str) -> None:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE donations
+        SET status = 'paid'
+        WHERE stripe_session_id = ?
+    """, (stripe_session_id,))
+    conn.commit()
+    conn.close()
+
+
+# ----------------------------
+# Waiver tracking (paper-first)
+# ----------------------------
+def waiver_mark_received(show_id: int, show_car_id: int, received_by: str) -> None:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE show_cars
+        SET waiver_received = 1,
+            waiver_received_at = datetime('now'),
+            waiver_received_by = ?
+        WHERE id = ? AND show_id = ?
+    """, (received_by or "staff", show_car_id, show_id))
+    conn.commit()
+    conn.close()
+
 
 # ----------------------------
 # SNAPSHOT EXPORT (ZIP)
 # ----------------------------
-import io
-import csv
-import zipfile
-from datetime import datetime
-
-
 def export_show_row(show_id: int):
     conn = _conn()
     cur = conn.cursor()
@@ -630,7 +766,7 @@ def export_show_row(show_id: int):
     return row
 
 
-def export_people_rows_for_show(show_id: int):
+def export_people_rows_for_show(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
     rows = cur.execute("""
@@ -644,7 +780,7 @@ def export_people_rows_for_show(show_id: int):
     return rows
 
 
-def export_show_cars_rows(show_id: int):
+def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
     rows = cur.execute("""
@@ -679,7 +815,6 @@ def build_snapshot_zip_bytes(show_id: int):
     mem = io.BytesIO()
 
     with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as z:
-
         # show.csv
         show_buf = io.StringIO()
         sw = csv.writer(show_buf)

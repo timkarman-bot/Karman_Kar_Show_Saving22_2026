@@ -42,6 +42,7 @@
             <th class="text-left py-2">Vehicle</th>
             <th class="text-left py-2">Cards</th>
             <th class="text-left py-2">Check-in</th>
+            <th class="text-left py-2">Waiver</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -62,10 +63,34 @@
                   Owner check-in
                 </a>
               </td>
+              <td class="py-3">
+                <div class="flex items-center gap-2 flex-wrap">
+                  {% if c["waiver_received"] == 1 %}
+                    <span class="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
+                      Received
+                    </span>
+                  {% else %}
+                    <span class="px-3 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold">
+                      Not yet
+                    </span>
+                    <form method="POST" action="{{ url_for('admin_waiver_received') }}">
+                      <input type="hidden" name="show_car_id" value="{{ c['id'] }}">
+                      <button class="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" type="submit">
+                        Mark received
+                      </button>
+                    </form>
+                  {% endif %}
+
+                  <a class="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+                     href="{{ url_for('waiver_print', show_slug=show['slug'], car_token=c['car_token']) }}">
+                    Print waiver
+                  </a>
+                </div>
+              </td>
             </tr>
           {% endfor %}
           {% if not cars %}
-            <tr><td class="py-5 text-slate-500" colspan="5">No cars yet.</td></tr>
+            <tr><td class="py-5 text-slate-500" colspan="6">No cars yet.</td></tr>
           {% endif %}
         </tbody>
       </table>
