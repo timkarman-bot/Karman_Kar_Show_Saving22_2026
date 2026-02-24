@@ -92,7 +92,7 @@ CATEGORY_SLUGS: Dict[str, str] = {
     "peoples-choice": "People’s Choice",
 }
 
-DEFAULT_SHOW = {F
+DEFAULT_SHOW = {
     "slug": "karman-charity-show",
     "title": "Karman Charity Car Show",
     "date": "Saturday, April 26, 2026",
@@ -205,34 +205,6 @@ def inject_globals():
 # ----------------------------
 # PUBLIC PAGES
 # ----------------------------
-
-
-
-#-----------------------------
-# Temporary Debug route Start
-#-----------------------------
-
-@app.get("/admin/debug/db")
-@require_admin
-def admin_debug_db():
-    import os
-    from database import DB_PATH, get_active_show
-    show = get_active_show()
-    return {
-        "db_path": DB_PATH,
-        "db_exists": os.path.exists(DB_PATH),
-        "db_size_bytes": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
-        "active_show_slug": show["slug"] if show else None,
-        "active_show_id": int(show["id"]) if show else None,
-    }
-
-
-
-
-#---------------------------
-# Temporary Debug route End
-#---------------------------
-
 
 @app.get("/")
 def home():
@@ -1000,6 +972,31 @@ def admin_sponsors_remove():
     remove_sponsor_from_show(int(show["id"]), sponsor_id)
     flash("Sponsor removed from show.", "ok")
     return redirect(url_for("admin_sponsors"))
+
+#-----------------------------
+# Temporary Debug route Start
+#-----------------------------
+
+@app.get("/admin/debug/db")
+@require_admin
+def admin_debug_db():
+    import os
+    from database import DB_PATH, get_active_show
+    show = get_active_show()
+    return {
+        "db_path": DB_PATH,
+        "db_exists": os.path.exists(DB_PATH),
+        "db_size_bytes": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
+        "active_show_slug": show["slug"] if show else None,
+        "active_show_id": int(show["id"]) if show else None,
+    }
+default
+
+
+
+#---------------------------
+# Temporary Debug route End
+#---------------------------
 
 
 # ----------------------------
