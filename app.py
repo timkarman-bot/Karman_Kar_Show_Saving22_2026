@@ -990,7 +990,7 @@ def admin_debug_db():
         "active_show_slug": show["slug"] if show else None,
         "active_show_id": int(show["id"]) if show else None,
     }
-default
+
 
 
 
