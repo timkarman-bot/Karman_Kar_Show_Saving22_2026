@@ -76,18 +76,18 @@ app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
 # Add a temporary route lister (fast proof)
 #--------------------------------------------
 
-# @app.get("/admin/debug/routes")
-# @require_admin
-# def admin_debug_routes():
-#    rules = []
-#   for r in app.url_map.iter_rules():
-#        rules.append({
-#            "rule": str(r),
-#            "endpoint": r.endpoint,
-#            "methods": sorted([m for m in r.methods if m not in ("HEAD","OPTIONS")]),
-#        })
-#    rules.sort(key=lambda x: x["rule"])
-#    return {"count": len(rules), "routes": rules}
+ @app.get("/admin/debug/routes")
+ @require_admin
+ def admin_debug_routes():
+    rules = []
+   for r in app.url_map.iter_rules():
+        rules.append({
+            "rule": str(r),
+            "endpoint": r.endpoint,
+            "methods": sorted([m for m in r.methods if m not in ("HEAD","OPTIONS")]),
+        })
+    rules.sort(key=lambda x: x["rule"])
+    return {"count": len(rules), "routes": rules}
 
 
 
@@ -993,22 +993,22 @@ def admin_sponsors_remove():
     return redirect(url_for("admin_sponsors"))
 
 #-----------------------------
-# Temporary Debug route Start
+# Temporary Debug route Start removed 2/25/2026
 #-----------------------------
 
-@app.get("/admin/debug/db")
-@require_admin
-def admin_debug_db():
-    import os
-    from database import DB_PATH, get_active_show
-    show = get_active_show()
-    return {
-        "db_path": DB_PATH,
-        "db_exists": os.path.exists(DB_PATH),
-        "db_size_bytes": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
-        "active_show_slug": show["slug"] if show else None,
-        "active_show_id": int(show["id"]) if show else None,
-    }
+#@app.get("/admin/debug/db")
+#@require_admin
+#def admin_debug_db():
+#    import os
+#    from database import DB_PATH, get_active_show
+#    show = get_active_show()
+#    return {
+#        "db_path": DB_PATH,
+#        "db_exists": os.path.exists(DB_PATH),
+#        "db_size_bytes": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
+#        "active_show_slug": show["slug"] if show else None,
+#        "active_show_id": int(show["id"]) if show else None,
+#    }
 
 
 
@@ -1016,6 +1016,24 @@ def admin_debug_db():
 #---------------------------
 # Temporary Debug route End
 #---------------------------
+
+
+#---------------------------
+# Temporary Debug route End
+#---------------------------
+@app.get("/admin/debug/routes")
+@require_admin
+def admin_debug_routes():
+    routes = []
+    for rule in app.url_map.iter_rules():
+        methods = sorted(m for m in rule.methods if m not in ("HEAD", "OPTIONS"))
+        routes.append({
+            "rule": str(rule),
+            "endpoint": rule.endpoint,
+            "methods": methods,
+        })
+    routes.sort(key=lambda r: r["rule"])
+    return {"count": len(routes), "routes": routes}
 
 
 # ----------------------------
