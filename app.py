@@ -72,6 +72,25 @@ from database import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
 
+#--------------------------------------------
+# Add a temporary route lister (fast proof)
+#--------------------------------------------
+
+@app.get("/admin/debug/routes")
+@require_admin
+def admin_debug_routes():
+    rules = []
+    for r in app.url_map.iter_rules():
+        rules.append({
+            "rule": str(r),
+            "endpoint": r.endpoint,
+            "methods": sorted([m for m in r.methods if m not in ("HEAD","OPTIONS")]),
+        })
+    rules.sort(key=lambda x: x["rule"])
+    return {"count": len(rules), "routes": rules}
+
+
+
 # Railway / reverse-proxy friendly (fixes _external URLs and scheme)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
