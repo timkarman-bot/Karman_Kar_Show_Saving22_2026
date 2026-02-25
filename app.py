@@ -72,22 +72,6 @@ from database import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
 
-#--------------------------------------------
-# Add a temporary route lister (fast proof)
-#--------------------------------------------
-
-@app.get("/admin/debug/routes")
-@require_admin
-def admin_debug_routes():
-    rules = []
-    for r in app.url_map.iter_rules():
-        rules.append({
-            "rule": str(r),
-            "endpoint": r.endpoint,
-            "methods": sorted([m for m in r.methods if m not in ("HEAD","OPTIONS")]),
-        })
-    rules.sort(key=lambda x: x["rule"])
-    return {"count": len(rules), "routes": rules}
 
 
 
@@ -1012,14 +996,8 @@ def admin_sponsors_remove():
 
 
 
-
 #---------------------------
-# Temporary Debug route End
-#---------------------------
-
-
-#---------------------------
-# Temporary Debug route End
+# Temporary Debug route Start
 #---------------------------
 @app.get("/admin/debug/routes")
 @require_admin
