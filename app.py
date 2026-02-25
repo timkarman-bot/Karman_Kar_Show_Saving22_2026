@@ -76,11 +76,11 @@ app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
 # Add a temporary route lister (fast proof)
 #--------------------------------------------
 
- @app.get("/admin/debug/routes")
- @require_admin
- def admin_debug_routes():
+@app.get("/admin/debug/routes")
+@require_admin
+def admin_debug_routes():
     rules = []
-   for r in app.url_map.iter_rules():
+    for r in app.url_map.iter_rules():
         rules.append({
             "rule": str(r),
             "endpoint": r.endpoint,
