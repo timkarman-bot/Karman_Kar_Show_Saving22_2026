@@ -82,14 +82,13 @@ def build_landscape_cards_pdf(
 
     Back page:
     - Owner check-in QR only (optional)
-    - Mirrored by default for common duplex workflows (fixes “backwards” printing).
+    - Mirrored by default for common duplex workflows.
     """
     page_w, page_h = landscape(letter)
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=landscape(letter))
 
     def static_fs(rel_path: str) -> str:
-        # rel_path like "img/sponsors/acme.png"
         return f"{static_root.rstrip('/')}/{rel_path}"
 
     def sponsor_logo_img(s: Optional[dict]) -> Optional[Image.Image]:
@@ -110,21 +109,28 @@ def build_landscape_cards_pdf(
         if img:
             std_logos.append(img)
 
+    # Slightly larger margin to avoid printer/browser header overlap
+    margin = 0.85 * inch
+
     for r in cars_rows:
         car_number = int(r["car_number"])
         car_token = str(r["car_token"])
 
-        margin = 0.65 * inch
-
         # Header
+        header_logo_w = 2.2 * inch
+        header_logo_h = 0.75 * inch
+        header_y = page_h - margin - header_logo_h
+
         if brand_logo:
-            draw_image_contain(c, brand_logo, margin, page_h - margin - 0.75 * inch, 2.2 * inch, 0.75 * inch)
+            draw_image_contain(c, brand_logo, margin, header_y, header_logo_w, header_logo_h)
+
+        title_x = margin + (2.35 * inch if brand_logo else 0)
 
         c.setFont("Helvetica-Bold", 28)
-        c.drawString(margin + (2.35 * inch if brand_logo else 0), page_h - margin - 40, f"VOTE FOR CAR #{car_number}")
+        c.drawString(title_x, page_h - margin - 40, f"VOTE FOR CAR #{car_number}")
 
         c.setFont("Helvetica", 12)
-        c.drawString(margin + (2.35 * inch if brand_logo else 0), page_h - margin - 62, str(show.get("title") or ""))
+        c.drawString(title_x, page_h - margin - 62, str(show.get("title") or ""))
 
         # Rules
         c.setFont("Helvetica-Bold", 14)
@@ -140,7 +146,7 @@ def build_landscape_cards_pdf(
             c.drawString(margin, y, line)
             y -= 16
 
-        # Sponsors strip (Title big + others small). ✅ Draw ONLY logos that exist.
+        # Sponsors strip (Title big + others small). Draw ONLY logos that exist.
         sponsor_y = page_h - margin - 1.95 * inch
         sponsor_h = 1.05 * inch
         sponsor_w = page_w - 2 * margin
@@ -163,7 +169,7 @@ def build_landscape_cards_pdf(
 
         # QR grid
         grid_x = margin
-        grid_y = margin + 1.25 * inch
+        grid_y = margin + 1.35 * inch
         grid_w = page_w - 2 * margin
         grid_h = 3.55 * inch
 
@@ -191,13 +197,17 @@ def build_landscape_cards_pdf(
             c.setFont("Helvetica", 11)
             c.drawCentredString(x0 + cell_w / 2, y0 + 4, label)
 
-        # Owner write-in section
-      # Owner write-in section (NO phone/email)
-c.setFont("Helvetica-Bold", 13)
-c.drawString(margin, margin + 0.75 * inch, "OWNER / VEHICLE INFO (Write in)")
-c.setFont("Helvetica", 12)
-c.drawString(margin, margin + 0.50 * inch, "Owner name: _____________________________")
-c.drawString(margin, margin + 0.30 * inch, "Year: ________   Make: ________________________   Model: ________________________")
+        # Owner write-in section (NO phone/email)
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(margin, margin + 0.80 * inch, "OWNER / VEHICLE INFO (Write in)")
+        c.setFont("Helvetica", 12)
+        c.drawString(margin, margin + 0.55 * inch, "Owner name: _____________________________")
+        c.drawString(
+            margin,
+            margin + 0.33 * inch,
+            "Year: ________   Make: ________________________   Model: ________________________",
+        )
+
         c.showPage()
 
         # Optional back page (owner check-in) — mirrored by default for duplex
