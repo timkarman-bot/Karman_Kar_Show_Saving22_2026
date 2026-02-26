@@ -8,17 +8,30 @@ import zipfile
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
-DB_PATH = os.getenv("DB_PATH", "app.db")
+DB_PATH = os.getenv("DB_PATH")
+if not DB_PATH:
+    # Railway volume convention: mount at /data
+    DB_PATH = "/data/app.db" if os.path.isdir("/data") else "app.db"
+
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db() -> None:
-    conn = _conn()
+    def _conn() -> sqlite3.Connection:
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+        conn.execute("PRAGMA foreign_keys=ON;")
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.row_factory = sqlite3.Row
+        return conn
+
     cur = conn.cursor()
 
     # Shows
