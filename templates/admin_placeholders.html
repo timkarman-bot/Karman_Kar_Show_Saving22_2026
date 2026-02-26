@@ -33,10 +33,37 @@
 
   <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
     <div class="text-xs font-semibold text-slate-500">CURRENT CARS</div>
+
+    <div class="mt-4 flex flex-wrap gap-2">
+      <button class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+              type="button"
+              onclick="toggleAll(true)">
+        Select all
+      </button>
+      <button class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+              type="button"
+              onclick="toggleAll(false)">
+        Select none
+      </button>
+
+      <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+         href="{{ url_for('admin_print_cards_pdf') }}?all=1"
+         target="_blank">
+        Bulk print ALL (PDF)
+      </a>
+
+      <button class="btn btn-primary" type="button" onclick="printSelected()">
+        Print selected (PDF)
+      </button>
+    </div>
+
     <div class="mt-4 overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="text-xs uppercase text-slate-500">
           <tr>
+            <th class="text-left py-2">
+              <input type="checkbox" onclick="toggleAll(this.checked)">
+            </th>
             <th class="text-left py-2">Car #</th>
             <th class="text-left py-2">Owner</th>
             <th class="text-left py-2">Vehicle</th>
@@ -48,12 +75,16 @@
         <tbody class="divide-y divide-slate-100">
           {% for c in cars %}
             <tr>
+              <td class="py-3">
+                <input class="car-pick" type="checkbox" value="{{ c['id'] }}">
+              </td>
               <td class="py-3 font-semibold">#{{ c["car_number"] }}</td>
               <td class="py-3">{{ c["owner_name"] or "—" }}</td>
               <td class="py-3">{{ c["year"] }} {{ c["make"] }} {{ c["model"] }}</td>
               <td class="py-3">
                 <a class="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
-                   href="{{ url_for('registration_complete', show_slug=show['slug'], car_token=c['car_token']) }}">
+                   href="{{ url_for('admin_print_cards_pdf') }}?ids={{ c['id'] }}"
+                   target="_blank">
                   Print
                 </a>
               </td>
@@ -90,11 +121,28 @@
             </tr>
           {% endfor %}
           {% if not cars %}
-            <tr><td class="py-5 text-slate-500" colspan="6">No cars yet.</td></tr>
+            <tr><td class="py-5 text-slate-500" colspan="7">No cars yet.</td></tr>
           {% endif %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
+
+<script>
+function toggleAll(on) {
+  document.querySelectorAll('.car-pick').forEach(cb => cb.checked = !!on);
+}
+function printSelected() {
+  const ids = Array.from(document.querySelectorAll('.car-pick'))
+    .filter(cb => cb.checked)
+    .map(cb => cb.value);
+  if (!ids.length) {
+    alert("No cars selected.");
+    return;
+  }
+  const url = "{{ url_for('admin_print_cards_pdf') }}" + "?ids=" + encodeURIComponent(ids.join(","));
+  window.open(url, "_blank");
+}
+</script>
 {% endblock %}

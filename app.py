@@ -8,6 +8,7 @@ import csv
 from typing import Dict
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from utils.print_cards import build_landscape_cards_pdf
 
 import stripe
 from flask import (
@@ -780,6 +781,64 @@ def admin_show_settings():
 
     flash("Registration settings saved.", "ok")
     return redirect(url_for("admin_page"))
+
+@app.get("/admin/print-cards.pdf")
+@require_admin
+def admin_print_cards_pdf():
+    """
+    Bulk print selected cars (by show_car_id) or all cars.
+    Query:
+      ?all=1
+      or ?ids=12,13,14
+    """
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    ids_raw = request.args.get("ids", "").strip()
+    all_raw = request.args.get("all", "").strip()
+
+    cars = list_show_cars_public(int(show["id"]))  # includes id, car_number, car_token
+    if not cars:
+        return "No cars to print.", 400
+
+    selected = cars
+    if all_raw != "1":
+        want_ids = set()
+        if ids_raw:
+            for part in ids_raw.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    want_ids.add(int(part))
+                except ValueError:
+                    pass
+        if not want_ids:
+            return "No cars selected.", 400
+        selected = [r for r in cars if int(r["id"]) in want_ids]
+
+    title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
+
+    pdf_bytes = build_landscape_cards_pdf(
+        show=dict(show),
+        cars_rows=[dict(r) for r in selected],
+        base_url=_abs_url(""),  # uses BASE_URL or request.url_root
+        static_root=os.path.join(app.root_path, "static"),
+        title_sponsor=title_sponsor,
+        sponsors=sponsors,
+        include_back=False,          # front voting page only for now
+        mirror_back_pages=True,      # ✅ default fix if you later enable backs
+    )
+
+    fname = f"{show['slug']}-voting-cards-landscape.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=fname,
+    )
+
 
 
 # ---- Snapshot export + close voting/export ----
