@@ -1,3 +1,4 @@
+# database.py
 import os
 import sqlite3
 import secrets
@@ -14,28 +15,23 @@ if not DB_PATH:
     DB_PATH = "/data/app.db" if os.path.isdir("/data") else "app.db"
 
 
-
 def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
+    conn.row_factory = sqlite3.Row
+    # safer defaults for Railway + concurrency
+    conn.execute("PRAGMA foreign_keys=ON;")
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db() -> None:
-    def _conn() -> sqlite3.Connection:
-        conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
-        conn.execute("PRAGMA foreign_keys=ON;")
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        conn.row_factory = sqlite3.Row
-        return conn
-
+    conn = _conn()
     cur = conn.cursor()
 
     # Shows
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS shows (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             slug TEXT NOT NULL UNIQUE,
@@ -51,10 +47,12 @@ def init_db() -> None:
             is_active INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
-    """)
+        """
+    )
 
     # People (car owners)
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS people (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -63,10 +61,12 @@ def init_db() -> None:
             opt_in_future INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
-    """)
+        """
+    )
 
     # Cars in a show
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS show_cars (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             show_id INTEGER NOT NULL,
@@ -81,10 +81,12 @@ def init_db() -> None:
             FOREIGN KEY(person_id) REFERENCES people(id),
             UNIQUE(show_id, car_number)
         )
-    """)
+        """
+    )
 
     # Votes
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS votes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             show_id INTEGER NOT NULL,
@@ -97,10 +99,12 @@ def init_db() -> None:
             FOREIGN KEY(show_id) REFERENCES shows(id),
             FOREIGN KEY(show_car_id) REFERENCES show_cars(id)
         )
-    """)
+        """
+    )
 
     # Sponsors master
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS sponsors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
@@ -108,25 +112,29 @@ def init_db() -> None:
             website_url TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
-    """)
+        """
+    )
 
     # Sponsors attached to a show
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS show_sponsors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             show_id INTEGER NOT NULL,
             sponsor_id INTEGER NOT NULL,
-            placement TEXT NOT NULL DEFAULT 'standard', -- 'title' or 'standard'
+            placement TEXT NOT NULL DEFAULT 'standard',
             sort_order INTEGER NOT NULL DEFAULT 100,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(show_id, sponsor_id),
             FOREIGN KEY(show_id) REFERENCES shows(id),
             FOREIGN KEY(sponsor_id) REFERENCES sponsors(id)
         )
-    """)
+        """
+    )
 
     # Attendees (spectators/supporters)
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS attendees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             show_id INTEGER NOT NULL,
@@ -142,37 +150,42 @@ def init_db() -> None:
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY(show_id) REFERENCES shows(id)
         )
-    """)
+        """
+    )
 
     # Donations (optional; $0 allowed)
-    cur.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS donations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             show_id INTEGER NOT NULL,
             attendee_id INTEGER,
             amount_cents INTEGER NOT NULL DEFAULT 0,
             currency TEXT NOT NULL DEFAULT 'USD',
-            status TEXT NOT NULL, -- 'skipped' | 'pending' | 'paid' | 'failed'
+            status TEXT NOT NULL,
             stripe_session_id TEXT UNIQUE,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY(show_id) REFERENCES shows(id),
             FOREIGN KEY(attendee_id) REFERENCES attendees(id)
         )
-    """)
+        """
+    )
 
-    # Field metrics (to answer "how many skip phone/email")
-    cur.execute("""
+    # Field metrics
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS field_metrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             show_id INTEGER NOT NULL,
-            field_name TEXT NOT NULL,      -- 'phone' | 'email'
-            was_provided INTEGER NOT NULL, -- 1/0
+            field_name TEXT NOT NULL,
+            was_provided INTEGER NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY(show_id) REFERENCES shows(id)
         )
-    """)
+        """
+    )
 
-    # Paper waiver tracking for cars
+    # Paper waiver tracking for cars (migrations)
     try:
         cur.execute("ALTER TABLE show_cars ADD COLUMN waiver_received INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
@@ -200,22 +213,25 @@ def ensure_default_show(default_show: Dict[str, Any]) -> None:
     cur.execute("SELECT id FROM shows WHERE slug = ?", (default_show["slug"],))
     row = cur.fetchone()
     if not row:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO shows (
                 slug, title, date, time, location_name, address,
                 benefiting, suggested_donation, description, voting_open, is_active
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
-        """, (
-            default_show["slug"],
-            default_show["title"],
-            default_show.get("date"),
-            default_show.get("time"),
-            default_show.get("location_name"),
-            default_show.get("address"),
-            default_show.get("benefiting"),
-            default_show.get("suggested_donation"),
-            default_show.get("description"),
-        ))
+            """,
+            (
+                default_show["slug"],
+                default_show["title"],
+                default_show.get("date"),
+                default_show.get("time"),
+                default_show.get("location_name"),
+                default_show.get("address"),
+                default_show.get("benefiting"),
+                default_show.get("suggested_donation"),
+                default_show.get("description"),
+            ),
+        )
 
     cur.execute("SELECT id FROM shows WHERE is_active = 1 LIMIT 1")
     active = cur.fetchone()
@@ -254,7 +270,10 @@ def set_show_voting_open(show_id: int, voting_open: bool) -> None:
 def toggle_show_voting(show_id: int) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("UPDATE shows SET voting_open = CASE voting_open WHEN 1 THEN 0 ELSE 1 END WHERE id = ?", (show_id,))
+    cur.execute(
+        "UPDATE shows SET voting_open = CASE voting_open WHEN 1 THEN 0 ELSE 1 END WHERE id = ?",
+        (show_id,),
+    )
     conn.commit()
     conn.close()
 
@@ -265,10 +284,13 @@ def toggle_show_voting(show_id: int) -> None:
 def create_person(name: str, phone: str, email: str, opt_in_future: bool) -> int:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO people (name, phone, email, opt_in_future)
         VALUES (?, ?, ?, ?)
-    """, (name, phone, email, 1 if opt_in_future else 0))
+        """,
+        (name, phone, email, 1 if opt_in_future else 0),
+    )
     conn.commit()
     pid = int(cur.lastrowid)
     conn.close()
@@ -278,11 +300,14 @@ def create_person(name: str, phone: str, email: str, opt_in_future: bool) -> int
 def update_person(person_id: int, name: str, phone: str, email: str, opt_in_future: bool) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         UPDATE people
         SET name = ?, phone = ?, email = ?, opt_in_future = ?
         WHERE id = ?
-    """, (name, phone, email, 1 if opt_in_future else 0, person_id))
+        """,
+        (name, phone, email, 1 if opt_in_future else 0, person_id),
+    )
     conn.commit()
     conn.close()
 
@@ -304,10 +329,13 @@ def create_show_car(
 
     token = _new_car_token()
     try:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO show_cars (show_id, person_id, car_number, car_token, year, make, model)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (show_id, person_id, car_number, token, year, make, model))
+            """,
+            (show_id, person_id, car_number, token, year, make, model),
+        )
         conn.commit()
         scid = int(cur.lastrowid)
         conn.close()
@@ -320,22 +348,23 @@ def create_show_car(
 def update_show_car_details(show_car_id: int, year: str, make: str, model: str) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         UPDATE show_cars
         SET year = ?, make = ?, model = ?
         WHERE id = ?
-    """, (year, make, model, show_car_id))
+        """,
+        (year, make, model, show_car_id),
+    )
     conn.commit()
     conn.close()
 
 
 def get_show_car_public_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]:
-    """
-    Public-safe view (NO phone/email).
-    """
     conn = _conn()
     cur = conn.cursor()
-    row = cur.execute("""
+    row = cur.execute(
+        """
         SELECT
             sc.*,
             p.name as owner_name
@@ -343,18 +372,18 @@ def get_show_car_public_by_token(show_id: int, car_token: str) -> Optional[sqlit
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ? AND sc.car_token = ?
         LIMIT 1
-    """, (show_id, car_token)).fetchone()
+        """,
+        (show_id, car_token),
+    ).fetchone()
     conn.close()
     return row
 
 
 def get_show_car_private_by_token(show_id: int, car_token: str) -> Optional[sqlite3.Row]:
-    """
-    Private view (includes phone/email) for admin/checkin/export.
-    """
     conn = _conn()
     cur = conn.cursor()
-    row = cur.execute("""
+    row = cur.execute(
+        """
         SELECT
             sc.*,
             p.name as owner_name,
@@ -365,7 +394,9 @@ def get_show_car_private_by_token(show_id: int, car_token: str) -> Optional[sqli
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ? AND sc.car_token = ?
         LIMIT 1
-    """, (show_id, car_token)).fetchone()
+        """,
+        (show_id, car_token),
+    ).fetchone()
     conn.close()
     return row
 
@@ -373,25 +404,25 @@ def get_show_car_private_by_token(show_id: int, car_token: str) -> Optional[sqli
 def get_show_car_by_number(show_id: int, car_number: int) -> Optional[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
-    row = cur.execute("""
+    row = cur.execute(
+        """
         SELECT sc.*, p.name as owner_name
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ? AND sc.car_number = ?
         LIMIT 1
-    """, (show_id, car_number)).fetchone()
+        """,
+        (show_id, car_number),
+    ).fetchone()
     conn.close()
     return row
 
 
 def list_show_cars_public(show_id: int) -> List[sqlite3.Row]:
-    """
-    Used by show page and admin placeholders.
-    Includes waiver fields but not phone/email.
-    """
     conn = _conn()
     cur = conn.cursor()
-    rows = cur.execute("""
+    rows = cur.execute(
+        """
         SELECT
             sc.id,
             sc.car_number,
@@ -407,7 +438,9 @@ def list_show_cars_public(show_id: int) -> List[sqlite3.Row]:
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ?
         ORDER BY sc.car_number ASC
-    """, (show_id,)).fetchall()
+        """,
+        (show_id,),
+    ).fetchall()
     conn.close()
     return rows
 
@@ -416,10 +449,6 @@ def list_show_cars_public(show_id: int) -> List[sqlite3.Row]:
 # Placeholder cars (pre-print)
 # ----------------------------
 def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
-    """
-    Creates placeholder cars with unique tokens for pre-printing.
-    Returns how many were created (skips car_numbers that already exist).
-    """
     conn = _conn()
     cur = conn.cursor()
 
@@ -432,7 +461,6 @@ def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
         if exists:
             continue
 
-        # placeholder person (FK required; empty strings allowed)
         cur.execute(
             "INSERT INTO people (name, phone, email, opt_in_future) VALUES (?, ?, ?, ?)",
             ("", "", "", 0),
@@ -440,10 +468,13 @@ def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
         person_id = int(cur.lastrowid)
 
         token = _new_car_token()
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO show_cars (show_id, person_id, car_number, car_token, year, make, model)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (show_id, person_id, n, token, "TBD", "TBD", "TBD"))
+            """,
+            (show_id, person_id, n, token, "TBD", "TBD", "TBD"),
+        )
         created += 1
 
     conn.commit()
@@ -460,15 +491,18 @@ def record_paid_votes(
     category: str,
     vote_qty: int,
     amount_cents: int,
-    stripe_session_id: str
+    stripe_session_id: str,
 ) -> None:
     conn = _conn()
     cur = conn.cursor()
     try:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO votes (show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id))
+            """,
+            (show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id),
+        )
         conn.commit()
     except sqlite3.IntegrityError:
         pass
@@ -487,7 +521,8 @@ def reset_votes_for_show(show_id: int) -> None:
 def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
-    rows = cur.execute("""
+    rows = cur.execute(
+        """
         SELECT
             v.created_at,
             v.category,
@@ -507,7 +542,9 @@ def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
         JOIN people p ON p.id = sc.person_id
         WHERE v.show_id = ?
         ORDER BY v.created_at ASC
-    """, (show_id,)).fetchall()
+        """,
+        (show_id,),
+    ).fetchall()
     conn.close()
     return rows
 
@@ -515,14 +552,17 @@ def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
 def leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int, int]]]:
     conn = _conn()
     cur = conn.cursor()
-    rows = cur.execute("""
+    rows = cur.execute(
+        """
         SELECT v.category, sc.car_number, SUM(v.vote_qty) as total_votes
         FROM votes v
         JOIN show_cars sc ON sc.id = v.show_car_id
         WHERE v.show_id = ?
         GROUP BY v.category, sc.car_number
         ORDER BY v.category ASC, total_votes DESC, sc.car_number ASC
-    """, (show_id,)).fetchall()
+        """,
+        (show_id,),
+    ).fetchall()
     conn.close()
 
     out: Dict[str, List[Tuple[int, int]]] = {}
@@ -535,14 +575,17 @@ def leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int, int]]]:
 def leaderboard_overall(show_id: int) -> List[Tuple[int, int]]:
     conn = _conn()
     cur = conn.cursor()
-    rows = cur.execute("""
+    rows = cur.execute(
+        """
         SELECT sc.car_number, SUM(v.vote_qty) as total_votes
         FROM votes v
         JOIN show_cars sc ON sc.id = v.show_car_id
         WHERE v.show_id = ?
         GROUP BY sc.car_number
         ORDER BY total_votes DESC, sc.car_number ASC
-    """, (show_id,)).fetchall()
+        """,
+        (show_id,),
+    ).fetchall()
     conn.close()
     return [(int(r["car_number"]), int(r["total_votes"] or 0)) for r in rows]
 
@@ -556,18 +599,24 @@ def upsert_sponsor(name: str, logo_path: str = "", website_url: str = "") -> int
 
     existing = cur.execute("SELECT id FROM sponsors WHERE name = ? LIMIT 1", (name,)).fetchone()
     if existing:
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE sponsors SET logo_path = ?, website_url = ?
             WHERE id = ?
-        """, (logo_path, website_url, int(existing["id"])))
+            """,
+            (logo_path, website_url, int(existing["id"])),
+        )
         conn.commit()
         conn.close()
         return int(existing["id"])
 
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO sponsors (name, logo_path, website_url)
         VALUES (?, ?, ?)
-    """, (name, logo_path, website_url))
+        """,
+        (name, logo_path, website_url),
+    )
     conn.commit()
     sid = int(cur.lastrowid)
     conn.close()
@@ -577,13 +626,16 @@ def upsert_sponsor(name: str, logo_path: str = "", website_url: str = "") -> int
 def attach_sponsor_to_show(show_id: int, sponsor_id: int, placement: str = "standard", sort_order: int = 100) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO show_sponsors (show_id, sponsor_id, placement, sort_order)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(show_id, sponsor_id) DO UPDATE SET
           placement=excluded.placement,
           sort_order=excluded.sort_order
-    """, (show_id, sponsor_id, placement, sort_order))
+        """,
+        (show_id, sponsor_id, placement, sort_order),
+    )
     conn.commit()
     conn.close()
 
@@ -597,17 +649,17 @@ def remove_sponsor_from_show(show_id: int, sponsor_id: int) -> None:
 
 
 def set_title_sponsor(show_id: int, sponsor_id: int) -> None:
-    """
-    Ensures only one title sponsor per show by clearing any existing title placements.
-    """
     conn = _conn()
     cur = conn.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
         UPDATE show_sponsors
         SET placement = 'standard'
         WHERE show_id = ? AND placement = 'title'
-    """, (show_id,))
+        """,
+        (show_id,),
+    )
 
     attach_sponsor_to_show(show_id, sponsor_id, placement="title", sort_order=0)
     conn.commit()
@@ -615,15 +667,11 @@ def set_title_sponsor(show_id: int, sponsor_id: int) -> None:
 
 
 def get_show_sponsors(show_id: int):
-    """
-    Returns (title_sponsor, sponsors)
-    title_sponsor: dict | None
-    sponsors: list[dict]
-    """
     conn = _conn()
     cur = conn.cursor()
 
-    rows = cur.execute("""
+    rows = cur.execute(
+        """
         SELECT
             s.id as sponsor_id,
             s.name,
@@ -638,7 +686,9 @@ def get_show_sponsors(show_id: int):
             CASE WHEN ss.placement = 'title' THEN 0 ELSE 1 END,
             ss.sort_order ASC,
             s.id ASC
-    """, (show_id,)).fetchall()
+        """,
+        (show_id,),
+    ).fetchall()
 
     conn.close()
 
@@ -678,22 +728,25 @@ def create_attendee(
 ) -> int:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO attendees
         (show_id, first_name, last_name, phone, email, zip, sponsor_opt_in, updates_opt_in, consent_text, consent_version)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        show_id,
-        first_name,
-        last_name,
-        phone or None,
-        email or None,
-        zip_code or None,
-        1 if sponsor_opt_in else 0,
-        1 if updates_opt_in else 0,
-        consent_text,
-        consent_version,
-    ))
+        """,
+        (
+            show_id,
+            first_name,
+            last_name,
+            phone or None,
+            email or None,
+            zip_code or None,
+            1 if sponsor_opt_in else 0,
+            1 if updates_opt_in else 0,
+            consent_text,
+            consent_version,
+        ),
+    )
     conn.commit()
     aid = int(cur.lastrowid)
     conn.close()
@@ -703,10 +756,13 @@ def create_attendee(
 def record_field_metric(show_id: int, field_name: str, was_provided: bool) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO field_metrics (show_id, field_name, was_provided)
         VALUES (?, ?, ?)
-    """, (show_id, field_name, 1 if was_provided else 0))
+        """,
+        (show_id, field_name, 1 if was_provided else 0),
+    )
     conn.commit()
     conn.close()
 
@@ -714,10 +770,13 @@ def record_field_metric(show_id: int, field_name: str, was_provided: bool) -> No
 def create_donation_row(show_id: int, attendee_id: int, amount_cents: int, status: str) -> int:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO donations (show_id, attendee_id, amount_cents, status)
         VALUES (?, ?, ?, ?)
-    """, (show_id, attendee_id, int(amount_cents), status))
+        """,
+        (show_id, attendee_id, int(amount_cents), status),
+    )
     conn.commit()
     did = int(cur.lastrowid)
     conn.close()
@@ -727,11 +786,14 @@ def create_donation_row(show_id: int, attendee_id: int, amount_cents: int, statu
 def attach_stripe_session_to_donation(donation_id: int, stripe_session_id: str) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         UPDATE donations
         SET stripe_session_id = ?
         WHERE id = ?
-    """, (stripe_session_id, donation_id))
+        """,
+        (stripe_session_id, donation_id),
+    )
     conn.commit()
     conn.close()
 
@@ -739,11 +801,14 @@ def attach_stripe_session_to_donation(donation_id: int, stripe_session_id: str) 
 def mark_donation_paid(stripe_session_id: str) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         UPDATE donations
         SET status = 'paid'
         WHERE stripe_session_id = ?
-    """, (stripe_session_id,))
+        """,
+        (stripe_session_id,),
+    )
     conn.commit()
     conn.close()
 
@@ -754,13 +819,16 @@ def mark_donation_paid(stripe_session_id: str) -> None:
 def waiver_mark_received(show_id: int, show_car_id: int, received_by: str) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         UPDATE show_cars
         SET waiver_received = 1,
             waiver_received_at = datetime('now'),
             waiver_received_by = ?
         WHERE id = ? AND show_id = ?
-    """, (received_by or "staff", show_car_id, show_id))
+        """,
+        (received_by or "staff", show_car_id, show_id),
+    )
     conn.commit()
     conn.close()
 
@@ -771,10 +839,7 @@ def waiver_mark_received(show_id: int, show_car_id: int, received_by: str) -> No
 def export_show_row(show_id: int):
     conn = _conn()
     cur = conn.cursor()
-    row = cur.execute(
-        "SELECT * FROM shows WHERE id = ? LIMIT 1",
-        (show_id,)
-    ).fetchone()
+    row = cur.execute("SELECT * FROM shows WHERE id = ? LIMIT 1", (show_id,)).fetchone()
     conn.close()
     return row
 
@@ -782,13 +847,16 @@ def export_show_row(show_id: int):
 def export_people_rows_for_show(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
-    rows = cur.execute("""
+    rows = cur.execute(
+        """
         SELECT DISTINCT p.*
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ?
         ORDER BY p.created_at ASC
-    """, (show_id,)).fetchall()
+        """,
+        (show_id,),
+    ).fetchall()
     conn.close()
     return rows
 
@@ -796,7 +864,8 @@ def export_people_rows_for_show(show_id: int) -> List[sqlite3.Row]:
 def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
     cur = conn.cursor()
-    rows = cur.execute("""
+    rows = cur.execute(
+        """
         SELECT
             sc.*,
             p.name as owner_name,
@@ -807,7 +876,9 @@ def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ?
         ORDER BY sc.car_number ASC
-    """, (show_id,)).fetchall()
+        """,
+        (show_id,),
+    ).fetchall()
     conn.close()
     return rows
 
