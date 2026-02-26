@@ -25,6 +25,10 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
+def _b(v: bool) -> int:
+    return 1 if v else 0
+
+
 def init_db() -> None:
     conn = _conn()
     cur = conn.cursor()
@@ -49,6 +53,16 @@ def init_db() -> None:
         )
         """
     )
+
+    # ---- Safe migrations for shows table ----
+    try:
+        cur.execute("ALTER TABLE shows ADD COLUMN show_type TEXT NOT NULL DEFAULT 'full'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cur.execute("ALTER TABLE shows ADD COLUMN allow_prereg_override INTEGER")
+    except sqlite3.OperationalError:
+        pass
 
     # People (car owners)
     cur.execute(
@@ -279,7 +293,7 @@ def get_show_by_slug(slug: str) -> Optional[sqlite3.Row]:
 def set_show_voting_open(show_id: int, voting_open: bool) -> None:
     conn = _conn()
     cur = conn.cursor()
-    cur.execute("UPDATE shows SET voting_open = ? WHERE id = ?", (1 if voting_open else 0, show_id))
+    cur.execute("UPDATE shows SET voting_open = ? WHERE id = ?", (_b(voting_open), show_id))
     conn.commit()
     conn.close()
 
@@ -290,6 +304,45 @@ def toggle_show_voting(show_id: int) -> None:
     cur.execute(
         "UPDATE shows SET voting_open = CASE voting_open WHEN 1 THEN 0 ELSE 1 END WHERE id = ?",
         (show_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_show_registration_settings(
+    show_id: int,
+    show_type: str,
+    allow_prereg_override: Optional[int],
+) -> None:
+    """
+    show_type: 'popup' or 'full'
+    allow_prereg_override:
+      None -> default (based on show_type)
+      0 -> force OFF
+      1 -> force ON
+    """
+    st = (show_type or "full").strip().lower()
+    if st not in ("popup", "full"):
+        st = "full"
+
+    if allow_prereg_override is not None:
+        try:
+            allow_prereg_override = int(allow_prereg_override)
+        except Exception:
+            allow_prereg_override = None
+        if allow_prereg_override not in (0, 1):
+            allow_prereg_override = None
+
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE shows
+        SET show_type = ?,
+            allow_prereg_override = ?
+        WHERE id = ?
+        """,
+        (st, allow_prereg_override, show_id),
     )
     conn.commit()
     conn.close()
@@ -318,8 +371,8 @@ def create_person(
             name,
             phone,
             email,
-            1 if opt_in_future else 0,
-            1 if sponsor_opt_in else 0,
+            _b(opt_in_future),
+            _b(sponsor_opt_in),
             consent_text,
             consent_version,
         ),
@@ -352,8 +405,8 @@ def update_person(
             name,
             phone,
             email,
-            1 if opt_in_future else 0,
-            1 if sponsor_opt_in else 0,
+            _b(opt_in_future),
+            _b(sponsor_opt_in),
             consent_text,
             consent_version,
             person_id,
@@ -516,7 +569,10 @@ def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
             continue
 
         cur.execute(
-            "INSERT INTO people (name, phone, email, opt_in_future, sponsor_opt_in, consent_text, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO people (name, phone, email, opt_in_future, sponsor_opt_in, consent_text, consent_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
             ("", "", "", 0, 0, None, None),
         )
         person_id = int(cur.lastrowid)
@@ -797,8 +853,8 @@ def create_attendee(
             phone or None,
             email or None,
             zip_code or None,
-            1 if sponsor_opt_in else 0,
-            1 if updates_opt_in else 0,
+            _b(sponsor_opt_in),
+            _b(updates_opt_in),
             consent_text,
             consent_version,
         ),
@@ -817,7 +873,7 @@ def record_field_metric(show_id: int, field_name: str, was_provided: bool) -> No
         INSERT INTO field_metrics (show_id, field_name, was_provided)
         VALUES (?, ?, ?)
         """,
-        (show_id, field_name, 1 if was_provided else 0),
+        (show_id, field_name, _b(was_provided)),
     )
     conn.commit()
     conn.close()
@@ -918,6 +974,9 @@ def export_people_rows_for_show(show_id: int) -> List[sqlite3.Row]:
 
 
 def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
+    """
+    Export cars + owner info for a show (includes waiver + opt-in fields).
+    """
     conn = _conn()
     cur = conn.cursor()
     rows = cur.execute(
@@ -927,7 +986,10 @@ def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
             p.name as owner_name,
             p.phone as owner_phone,
             p.email as owner_email,
-            p.opt_in_future
+            p.opt_in_future,
+            p.sponsor_opt_in,
+            p.consent_version,
+            p.consent_text
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ?

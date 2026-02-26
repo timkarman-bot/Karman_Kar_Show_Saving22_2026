@@ -45,7 +45,13 @@
         </div>
 
         <div class="mt-7 flex flex-wrap gap-3">
-          <a class="btn btn-primary" href="{{ url_for('register_page') }}">Register your car</a>
+          {% if prereg_allowed(show) %}
+            <a class="btn btn-primary" href="{{ url_for('register_page') }}">Register your car</a>
+          {% else %}
+            <div class="px-4 py-2 rounded-2xl border border-slate-200 bg-slate-50 text-slate-700">
+              No pre-registration for this show — register on-site via QR check-in.
+            </div>
+          {% endif %}
           <a class="btn btn-outline" href="{{ url_for('events') }}">Upcoming events</a>
         </div>
 

@@ -33,6 +33,7 @@ from database import (
     get_show_by_slug,
     toggle_show_voting,
     set_show_voting_open,
+    update_show_registration_settings,
     # registration / checkin
     create_person,
     update_person,
@@ -71,9 +72,6 @@ from database import (
 # ----------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
-
-
-
 
 # Railway / reverse-proxy friendly (fixes _external URLs and scheme)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
@@ -131,6 +129,34 @@ ensure_default_show(DEFAULT_SHOW)
 # ----------------------------
 # HELPERS
 # ----------------------------
+CONSENT_TEXT_CAR_OWNER = (
+    "By submitting this form, you agree Karman Kar Shows & Events may contact you about this event and future events "
+    "if selected. Msg/data rates may apply. Opt out anytime."
+)
+CONSENT_VERSION = "2026-02-26"
+
+
+def prereg_allowed(show) -> bool:
+    """
+    Pre-registration allowed rule:
+      - if allow_prereg_override is 0/1, obey it
+      - else default: full => allowed, popup => not allowed
+    """
+    if not show:
+        return False
+
+    ov = show["allow_prereg_override"] if "allow_prereg_override" in show.keys() else None
+    if ov is not None:
+        try:
+            return int(ov) == 1
+        except Exception:
+            pass
+
+    st = (show["show_type"] if "show_type" in show.keys() else "full") or "full"
+    st = str(st).strip().lower()
+    return st == "full"
+
+
 def _require_stripe() -> None:
     if not stripe.api_key:
         abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY in Railway variables.")
@@ -202,13 +228,13 @@ def inject_globals():
         "title_sponsor": title_sponsor,
         "sponsors": sponsors,
         "is_admin": session.get("admin_authed", False),
+        "prereg_allowed": prereg_allowed,
     }
 
 
 # ----------------------------
 # PUBLIC PAGES
 # ----------------------------
-
 @app.get("/")
 def home():
     show = get_active_show()
@@ -248,6 +274,10 @@ def register_page():
     show = get_active_show()
     if not show:
         return "No active show configured.", 500
+
+    if not prereg_allowed(show):
+        return render_template("registration_closed.html", show=show), 403
+
     return render_template("register.html", show=show)
 
 
@@ -256,6 +286,9 @@ def register_submit():
     show = get_active_show()
     if not show:
         return "No active show configured.", 500
+
+    if not prereg_allowed(show):
+        return jsonify({"ok": False, "error": "Pre-registration is not available for this show."}), 403
 
     name = request.form.get("name", "").strip()
     phone = request.form.get("phone", "").strip()
@@ -277,7 +310,16 @@ def register_submit():
     except ValueError:
         return render_template("register.html", show=show, error="Car number must be a positive number.")
 
-    person_id = create_person(name=name, phone=phone, email=email, opt_in_future=opt_in_future)
+    sponsor_opt_in = False  # car-owner form currently has no sponsor checkbox
+    person_id = create_person(
+        name=name,
+        phone=phone,
+        email=email,
+        opt_in_future=opt_in_future,
+        sponsor_opt_in=sponsor_opt_in,
+        consent_text=CONSENT_TEXT_CAR_OWNER,
+        consent_version=CONSENT_VERSION,
+    )
 
     try:
         _, car_token = create_show_car(
@@ -354,6 +396,9 @@ def checkin_submit(show_slug: str, car_token: str):
         phone=phone,
         email=email,
         opt_in_future=opt_in_future,
+        sponsor_opt_in=bool(car_private["sponsor_opt_in"]) if "sponsor_opt_in" in car_private.keys() else False,
+        consent_text=car_private["consent_text"] if "consent_text" in car_private.keys() else CONSENT_TEXT_CAR_OWNER,
+        consent_version=car_private["consent_version"] if "consent_version" in car_private.keys() else CONSENT_VERSION,
     )
 
     update_show_car_details(
@@ -709,6 +754,34 @@ def admin_logout():
     return redirect(url_for("admin_page"))
 
 
+@app.post("/admin/show-settings")
+@require_admin
+def admin_show_settings():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    show_type = (request.form.get("show_type") or "full").strip().lower()
+
+    ov_raw = request.form.get("allow_prereg_override", "").strip()
+    if ov_raw == "":
+        ov = None
+    else:
+        try:
+            ov = int(ov_raw)
+        except ValueError:
+            ov = None
+
+    update_show_registration_settings(
+        show_id=int(show["id"]),
+        show_type=show_type,
+        allow_prereg_override=ov,
+    )
+
+    flash("Registration settings saved.", "ok")
+    return redirect(url_for("admin_page"))
+
+
 # ---- Snapshot export + close voting/export ----
 @app.get("/admin/export-snapshot.zip")
 @require_admin
@@ -976,40 +1049,23 @@ def admin_sponsors_remove():
     flash("Sponsor removed from show.", "ok")
     return redirect(url_for("admin_sponsors"))
 
-#-----------------------------
-# Temporary Debug route Start removed 2/25/2026
-#-----------------------------
 
-#@app.get("/admin/debug/db")
-#@require_admin
-#def admin_debug_db():
-#    import os
-#    from database import DB_PATH, get_active_show
-#    show = get_active_show()
-#    return {
-#        "db_path": DB_PATH,
-#        "db_exists": os.path.exists(DB_PATH),
-#        "db_size_bytes": os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0,
-#        "active_show_slug": show["slug"] if show else None,
-#        "active_show_id": int(show["id"]) if show else None,
-#    }
-
-
-
-#---------------------------
+# ---------------------------
 # Temporary Debug route Start
-#---------------------------
+# ---------------------------
 @app.get("/admin/debug/routes")
 @require_admin
 def admin_debug_routes():
     routes = []
     for rule in app.url_map.iter_rules():
         methods = sorted(m for m in rule.methods if m not in ("HEAD", "OPTIONS"))
-        routes.append({
-            "rule": str(rule),
-            "endpoint": rule.endpoint,
-            "methods": methods,
-        })
+        routes.append(
+            {
+                "rule": str(rule),
+                "endpoint": rule.endpoint,
+                "methods": methods,
+            }
+        )
     routes.sort(key=lambda r: r["rule"])
     return {"count": len(routes), "routes": routes}
 
