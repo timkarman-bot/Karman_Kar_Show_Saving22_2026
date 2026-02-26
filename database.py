@@ -59,10 +59,27 @@ def init_db() -> None:
             phone TEXT NOT NULL,
             email TEXT NOT NULL,
             opt_in_future INTEGER NOT NULL DEFAULT 0,
+            sponsor_opt_in INTEGER NOT NULL DEFAULT 0,
+            consent_text TEXT,
+            consent_version TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
         """
     )
+
+    # ---- Safe migrations for people table ----
+    try:
+        cur.execute("ALTER TABLE people ADD COLUMN sponsor_opt_in INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cur.execute("ALTER TABLE people ADD COLUMN consent_text TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cur.execute("ALTER TABLE people ADD COLUMN consent_version TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     # Cars in a show
     cur.execute(
@@ -281,15 +298,31 @@ def toggle_show_voting(show_id: int) -> None:
 # ----------------------------
 # Registration / People
 # ----------------------------
-def create_person(name: str, phone: str, email: str, opt_in_future: bool) -> int:
+def create_person(
+    name: str,
+    phone: str,
+    email: str,
+    opt_in_future: bool,
+    sponsor_opt_in: bool,
+    consent_text: str,
+    consent_version: str,
+) -> int:
     conn = _conn()
     cur = conn.cursor()
     cur.execute(
         """
-        INSERT INTO people (name, phone, email, opt_in_future)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO people (name, phone, email, opt_in_future, sponsor_opt_in, consent_text, consent_version)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (name, phone, email, 1 if opt_in_future else 0),
+        (
+            name,
+            phone,
+            email,
+            1 if opt_in_future else 0,
+            1 if sponsor_opt_in else 0,
+            consent_text,
+            consent_version,
+        ),
     )
     conn.commit()
     pid = int(cur.lastrowid)
@@ -297,16 +330,34 @@ def create_person(name: str, phone: str, email: str, opt_in_future: bool) -> int
     return pid
 
 
-def update_person(person_id: int, name: str, phone: str, email: str, opt_in_future: bool) -> None:
+def update_person(
+    person_id: int,
+    name: str,
+    phone: str,
+    email: str,
+    opt_in_future: bool,
+    sponsor_opt_in: bool,
+    consent_text: str,
+    consent_version: str,
+) -> None:
     conn = _conn()
     cur = conn.cursor()
     cur.execute(
         """
         UPDATE people
-        SET name = ?, phone = ?, email = ?, opt_in_future = ?
+        SET name = ?, phone = ?, email = ?, opt_in_future = ?, sponsor_opt_in = ?, consent_text = ?, consent_version = ?
         WHERE id = ?
         """,
-        (name, phone, email, 1 if opt_in_future else 0, person_id),
+        (
+            name,
+            phone,
+            email,
+            1 if opt_in_future else 0,
+            1 if sponsor_opt_in else 0,
+            consent_text,
+            consent_version,
+            person_id,
+        ),
     )
     conn.commit()
     conn.close()
@@ -389,7 +440,10 @@ def get_show_car_private_by_token(show_id: int, car_token: str) -> Optional[sqli
             p.name as owner_name,
             p.phone as owner_phone,
             p.email as owner_email,
-            p.opt_in_future
+            p.opt_in_future,
+            p.sponsor_opt_in,
+            p.consent_text,
+            p.consent_version
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
         WHERE sc.show_id = ? AND sc.car_token = ?
@@ -462,8 +516,8 @@ def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
             continue
 
         cur.execute(
-            "INSERT INTO people (name, phone, email, opt_in_future) VALUES (?, ?, ?, ?)",
-            ("", "", "", 0),
+            "INSERT INTO people (name, phone, email, opt_in_future, sponsor_opt_in, consent_text, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("", "", "", 0, 0, None, None),
         )
         person_id = int(cur.lastrowid)
 
@@ -536,7 +590,9 @@ def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
             p.name as owner_name,
             p.phone as owner_phone,
             p.email as owner_email,
-            p.opt_in_future
+            p.opt_in_future,
+            p.sponsor_opt_in,
+            p.consent_version
         FROM votes v
         JOIN show_cars sc ON sc.id = v.show_car_id
         JOIN people p ON p.id = sc.person_id
