@@ -204,7 +204,7 @@ def build_landscape_cards_pdf(
         c.drawString(margin, margin + 0.55 * inch, "Owner name: _____________________________")
         c.drawString(
             margin,
-            margin + 0.33 * inch,
+            margin + 0.30 * inch,
             "Year: ________   Make: ________________________   Model: ________________________",
         )
 
