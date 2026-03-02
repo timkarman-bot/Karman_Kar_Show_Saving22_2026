@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set title = "Registration Closed • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+
+  <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-600 text-white text-xs">
+      Registration closed
+    </div>
+
+    <h1 class="mt-4 text-3xl font-semibold tracking-tight">
+      Pre-registration is not available for this show.
+    </h1>
+
+    {% if show %}
+      <div class="mt-2 text-slate-700">
+        <div class="font-semibold">{{ show["title"] }}</div>
+        {% if show["date"] or show["time"] %}
+          <div class="text-sm text-slate-600">
+            {{ show["date"] }}{% if show["time"] %} • {{ show["time"] }}{% endif %}
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div class="font-semibold">What to do next</div>
+      <div class="mt-1 text-sm text-slate-700">
+        Please arrive at the event to check in and get your car number.
+      </div>
+    </div>
+
+    <div class="mt-6 flex flex-wrap gap-3">
+      <a class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90"
+         href="{{ url_for('home') }}">
+        Back to home
+      </a>
+
+      {% if show %}
+        <a class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50"
+           href="{{ url_for('show_page', slug=show['slug']) }}">
+          View show info
+        </a>
+      {% endif %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}
