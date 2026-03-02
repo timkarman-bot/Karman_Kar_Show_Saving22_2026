@@ -8,7 +8,6 @@ import csv
 from typing import Dict
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from utils.print_cards import build_landscape_cards_pdf
 
 import stripe
 from flask import (
@@ -781,20 +780,18 @@ def admin_show_settings():
 
     flash("Registration settings saved.", "ok")
     return redirect(url_for("admin_page"))
-
+    
 @app.get("/admin/print-cards.pdf")
 @require_admin
 def admin_print_cards_pdf():
-    """
-    Bulk print selected cars (by show_car_id) or all cars.
-    Query:
-      ?all=1
-      or ?ids=12,13,14
-    """
+    # Import here so the site can boot even if reportlab isn't installed yet
+    from utils.print_cards import build_landscape_cards_pdf
+
     show = get_active_show()
     if not show:
         return "No active show.", 500
 
+    # ...the rest of your PDF logic...
     ids_raw = request.args.get("ids", "").strip()
     all_raw = request.args.get("all", "").strip()
 
