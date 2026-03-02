@@ -3,5 +3,5 @@ Werkzeug==2.3.8
 stripe==14.0.1
 Pillow==10.4.0
 gunicorn==22.0.0
-reportlab==4.0.0,<5
+reportlab>=4.0.0,<5
 qrcode[pil]==7.4.2
