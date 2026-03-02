@@ -1,4 +1,4 @@
-# app.py
+# app.py 03/02/2026
 # Karman Kar Shows & Events — Car show registration + QR voting + admin controls
 # 4-space indentation only (no tabs)
 
