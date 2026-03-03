@@ -1,4 +1,4 @@
-# app.py 03/03/2026 12:39
+# app.py 03/03/2026 12:39 (regenerated clean)
 # Karman Kar Shows & Events — Car show registration + QR voting + admin controls
 # 4-space indentation only (no tabs)
 
@@ -102,7 +102,10 @@ DEFAULT_SHOW = {
     "address": "1 Sporting Way, Kansas City, KS 66111",
     "benefiting": "Saving22 / 22 Survivor Awareness",
     "suggested_donation": "$35 suggested donation for show cars",
-    "description": "A charity car show supporting veteran suicide awareness with judged certificates by branch favorites and People’s Choice.",
+    "description": (
+        "A charity car show supporting veteran suicide awareness with judged certificates "
+        "by branch favorites and People’s Choice."
+    ),
 }
 
 UPCOMING_EVENTS = [
@@ -403,6 +406,7 @@ def checkin_submit(show_slug: str, car_token: str):
     make = request.form.get("make", "").strip()
     model = request.form.get("model", "").strip()
 
+    # Check-in requires phone + email (staff workflow)
     if not (name and phone and email and year and make and model):
         return render_template("checkin.html", show=show, car=car_private, error="Please fill out all required fields.")
 
@@ -473,7 +477,7 @@ def attendee_submit(show_slug: str):
     if not (first_name and last_name):
         return render_template("attendee.html", show=show, error="First and last name are required.")
 
-    # Require phone if opting into sponsor or updates
+    # Require phone if opting into sponsor or updates (email stays optional)
     if (sponsor_opt_in or updates_opt_in) and not phone:
         return render_template(
             "attendee.html",
@@ -809,7 +813,13 @@ def admin_show_settings():
 @app.get("/admin/print-cards.pdf")
 @require_admin
 def admin_print_cards_pdf():
-    # Import here so the site can boot even if reportlab isn't installed yet
+    """
+    Admin PDF generator.
+    Query params:
+      - all=1          -> print all cars
+      - ids=1,2,3      -> print selected show_car ids
+      - back=1         -> include duplex backs (owner check-in QR)
+    """
     from utils.print_cards import build_landscape_cards_pdf
 
     show = get_active_show()
@@ -818,10 +828,9 @@ def admin_print_cards_pdf():
 
     ids_raw = request.args.get("ids", "").strip()
     all_raw = request.args.get("all", "").strip()
+    back_raw = request.args.get("back", "").strip()
 
-# NEW: duplex/back toggle
-    back_raw = request.args.get("back", "").strip().lower()
-    include_back = back_raw in ("1", "true", "yes", "on")
+    include_back = back_raw == "1"
 
     cars = list_show_cars_public(int(show["id"]))  # includes id, car_number, car_token
     if not cars:
@@ -839,8 +848,10 @@ def admin_print_cards_pdf():
                     want_ids.add(int(part))
                 except ValueError:
                     pass
+
         if not want_ids:
             return "No cars selected.", 400
+
         selected = [r for r in cars if int(r["id"]) in want_ids]
 
     title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
@@ -852,14 +863,11 @@ def admin_print_cards_pdf():
         static_root=os.path.join(app.root_path, "static"),
         title_sponsor=title_sponsor,
         sponsors=sponsors,
-        include_back=include_back,      # front voting page only for now
-        mirror_back_pages=True,  # ✅ default fix if you later enable backs
+        include_back=include_back,
+        mirror_back_pages=True,
     )
 
-  fname = f"{show['slug']}-voting-cards-landscape.pdf"
-    if include_back:
-        fname = f"{show['slug']}-voting-cards-landscape-duplex.pdf"
-
+    fname = f"{show['slug']}-voting-cards-landscape.pdf"
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
