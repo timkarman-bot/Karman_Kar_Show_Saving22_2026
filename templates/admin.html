@@ -1,51 +1,181 @@
-{# templates/admin.html (ADD THIS BLOCK somewhere in the authed dashboard area) #}
+{% extends "base.html" %}
+{% set title = "Admin" %}
 
-<div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
-  <div class="text-xs font-semibold text-slate-500">PRINT</div>
-  <div class="mt-2 font-semibold">Windshield voting cards</div>
-  <div class="mt-1 text-sm text-slate-600">
-    Front-only prints the voting sheet. Duplex adds a check-in QR on the back for owner registration.
+{% block content %}
+<div class="max-w-6xl">
+
+  {% if not authed %}
+
+    <!-- LOGIN -->
+    <div class="max-w-md mx-auto mt-16 bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
+      <div class="text-xs font-semibold text-slate-500">RESTRICTED</div>
+      <h1 class="mt-1 text-3xl font-semibold tracking-tight">Admin Login</h1>
+
+      {% if login_error %}
+        <div class="mt-4 text-sm text-red-600">{{ login_error }}</div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('admin_login') }}" class="mt-6 space-y-4">
+        <input type="hidden" name="next" value="{{ next }}">
+        <div>
+          <label class="text-sm font-semibold">Password</label>
+          <input type="password"
+                 name="password"
+                 class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+        </div>
+        <button class="btn btn-primary w-full" type="submit">
+          Login
+        </button>
+      </form>
+    </div>
+
+  {% else %}
+
+  <!-- DASHBOARD -->
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="text-xs font-semibold text-slate-500">ADMIN</div>
+      <h1 class="mt-1 text-3xl font-semibold tracking-tight">
+        {{ show["title"] if show else "No Active Show" }}
+      </h1>
+    </div>
+    <form method="POST" action="{{ url_for('admin_logout') }}">
+      <button class="btn btn-outline">Logout</button>
+    </form>
   </div>
 
-  <div class="mt-3 flex items-center gap-2">
-    <input id="adminPrintBack" type="checkbox" class="h-4 w-4">
-    <label for="adminPrintBack" class="text-sm text-slate-800">
-      Include check-in backs (duplex)
-    </label>
+  <!-- FLASH -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="mt-4 space-y-2">
+        {% for category, message in messages %}
+          <div class="rounded-xl px-4 py-3 text-sm
+            {% if category == 'error' %}
+              bg-red-50 text-red-700 border border-red-200
+            {% else %}
+              bg-emerald-50 text-emerald-700 border border-emerald-200
+            {% endif %}
+          ">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- VOTING CONTROLS -->
+  <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="text-xs font-semibold text-slate-500">VOTING</div>
+
+    <div class="mt-4 flex flex-wrap gap-3">
+      <form method="POST" action="{{ url_for('admin_open_voting') }}">
+        <button class="btn btn-primary">Open Voting</button>
+      </form>
+
+      <form method="POST" action="{{ url_for('admin_close_voting') }}">
+        <button class="btn btn-outline">Close Voting</button>
+      </form>
+
+      <a class="btn btn-outline" href="{{ url_for('admin_leaderboard') }}">
+        View Leaderboard
+      </a>
+
+      <a class="btn btn-outline" href="{{ url_for('admin_export_votes') }}">
+        Export Votes CSV
+      </a>
+    </div>
   </div>
 
-  <div class="mt-4 flex flex-wrap gap-3">
-    <a id="adminPrintAllBtn"
-       class="btn btn-primary"
-       href="{{ url_for('admin_print_cards_pdf') }}?all=1"
-       target="_blank">
-      Download PDF (All Cars)
+  <!-- PRINT SECTION (NEW CLEAN VERSION) -->
+  <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="text-xs font-semibold text-slate-500">PRINT</div>
+    <div class="mt-2 font-semibold">Windshield voting cards</div>
+    <div class="mt-1 text-sm text-slate-600">
+      Front-only prints the voting sheet. Duplex adds a check-in QR on the back.
+    </div>
+
+    <div class="mt-3 flex items-center gap-2">
+      <input id="adminPrintBack" type="checkbox" class="h-4 w-4">
+      <label for="adminPrintBack" class="text-sm text-slate-800">
+        Include check-in backs (duplex)
+      </label>
+    </div>
+
+    <div class="mt-4 flex flex-wrap gap-3">
+      <a id="adminPrintAllBtn"
+         class="btn btn-primary"
+         href="{{ url_for('admin_print_cards_pdf') }}?all=1"
+         target="_blank">
+        Download PDF (All Cars)
+      </a>
+
+      <a class="btn btn-outline"
+         href="{{ url_for('admin_placeholders') }}">
+        Go to Placeholder Cars
+      </a>
+    </div>
+  </div>
+
+  <!-- SHOW SETTINGS -->
+  <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="text-xs font-semibold text-slate-500">SHOW SETTINGS</div>
+
+    <form method="POST" action="{{ url_for('admin_show_settings') }}" class="mt-4 space-y-4">
+      <div>
+        <label class="text-sm font-semibold">Show Type</label>
+        <select name="show_type"
+                class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <option value="full">Full</option>
+          <option value="popup">Popup</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Allow Pre-Registration Override</label>
+        <input name="allow_prereg_override"
+               placeholder="Leave blank for default"
+               class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+
+      <button class="btn btn-primary">Save Settings</button>
+    </form>
+  </div>
+
+  <!-- OTHER LINKS -->
+  <div class="mt-6 flex flex-wrap gap-3">
+    <a class="btn btn-outline" href="{{ url_for('admin_placeholders') }}">
+      Placeholder Cars
     </a>
-
-    <a class="btn btn-outline"
-       href="{{ url_for('admin_placeholders') }}">
-      Go to Placeholder Cars
+    <a class="btn btn-outline" href="{{ url_for('admin_sponsors') }}">
+      Sponsors
+    </a>
+    <a class="btn btn-outline" href="{{ url_for('admin_export_snapshot_zip') }}">
+      Export Snapshot ZIP
     </a>
   </div>
-</div>
 
-<script>
-(function () {
-  const cb = document.getElementById("adminPrintBack");
-  const btn = document.getElementById("adminPrintAllBtn");
-  if (!cb || !btn) return;
+  <!-- DUPLEX SCRIPT -->
+  <script>
+  (function () {
+    const cb = document.getElementById("adminPrintBack");
+    const btn = document.getElementById("adminPrintAllBtn");
+    if (!cb || !btn) return;
 
-  const baseHref = btn.getAttribute("href").split("&back=")[0].split("?back=")[0];
+    const baseHref = btn.getAttribute("href").split("&back=")[0].split("?back=")[0];
 
-  function updateHref() {
-    let href = baseHref;
-    if (cb.checked) {
-      href += (href.includes("?") ? "&" : "?") + "back=1";
+    function updateHref() {
+      let href = baseHref;
+      if (cb.checked) {
+        href += (href.includes("?") ? "&" : "?") + "back=1";
+      }
+      btn.setAttribute("href", href);
     }
-    btn.setAttribute("href", href);
-  }
 
-  cb.addEventListener("change", updateHref);
-  updateHref();
-})();
-</script>
+    cb.addEventListener("change", updateHref);
+    updateHref();
+  })();
+  </script>
+
+  {% endif %}
+</div>
+{% endblock %}
