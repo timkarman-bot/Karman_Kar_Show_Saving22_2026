@@ -1,3 +1,4 @@
+{# templates/admin_placeholders.html #}
 {% extends "base.html" %}
 {% set title = "Placeholder Cars • Admin" %}
 
@@ -34,6 +35,21 @@
   <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
     <div class="text-xs font-semibold text-slate-500">CURRENT CARS</div>
 
+    <!-- NEW: Print options (Front-only vs Duplex backs) -->
+    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div class="font-semibold">Print settings</div>
+      <div class="mt-1 text-sm text-slate-600">
+        Front-only prints the voting sheet. Duplex adds a check-in QR on the back for owner registration.
+      </div>
+
+      <div class="mt-3 flex items-center gap-2">
+        <input id="printBack" type="checkbox" class="h-4 w-4">
+        <label for="printBack" class="text-sm text-slate-800">
+          Include check-in backs (duplex)
+        </label>
+      </div>
+    </div>
+
     <div class="mt-4 flex flex-wrap gap-2">
       <button class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
               type="button"
@@ -46,7 +62,8 @@
         Select none
       </button>
 
-      <a class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+      <a id="bulkPrintAllBtn"
+         class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
          href="{{ url_for('admin_print_cards_pdf') }}?all=1"
          target="_blank">
         Bulk print ALL (PDF)
@@ -133,16 +150,42 @@
 function toggleAll(on) {
   document.querySelectorAll('.car-pick').forEach(cb => cb.checked = !!on);
 }
+
 function printSelected() {
   const ids = Array.from(document.querySelectorAll('.car-pick'))
     .filter(cb => cb.checked)
     .map(cb => cb.value);
+
   if (!ids.length) {
     alert("No cars selected.");
     return;
   }
-  const url = "{{ url_for('admin_print_cards_pdf') }}" + "?ids=" + encodeURIComponent(ids.join(","));
+
+  const includeBack = !!document.getElementById("printBack")?.checked;
+
+  let url = "{{ url_for('admin_print_cards_pdf') }}" + "?ids=" + encodeURIComponent(ids.join(","));
+  if (includeBack) url += "&back=1";
+
   window.open(url, "_blank");
 }
+
+(function () {
+  const cb = document.getElementById("printBack");
+  const bulkBtn = document.getElementById("bulkPrintAllBtn");
+  if (!cb || !bulkBtn) return;
+
+  const baseHref = bulkBtn.getAttribute("href").split("&back=")[0].split("?back=")[0];
+
+  function updateBulkHref() {
+    let href = baseHref;
+    if (cb.checked) {
+      href += (href.includes("?") ? "&" : "?") + "back=1";
+    }
+    bulkBtn.setAttribute("href", href);
+  }
+
+  cb.addEventListener("change", updateBulkHref);
+  updateBulkHref();
+})();
 </script>
 {% endblock %}

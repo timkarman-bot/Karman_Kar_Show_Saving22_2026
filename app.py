@@ -819,6 +819,10 @@ def admin_print_cards_pdf():
     ids_raw = request.args.get("ids", "").strip()
     all_raw = request.args.get("all", "").strip()
 
+# NEW: duplex/back toggle
+    back_raw = request.args.get("back", "").strip().lower()
+    include_back = back_raw in ("1", "true", "yes", "on")
+
     cars = list_show_cars_public(int(show["id"]))  # includes id, car_number, car_token
     if not cars:
         return "No cars to print.", 400
@@ -848,11 +852,14 @@ def admin_print_cards_pdf():
         static_root=os.path.join(app.root_path, "static"),
         title_sponsor=title_sponsor,
         sponsors=sponsors,
-        include_back=False,      # front voting page only for now
+        include_back=include_back,      # front voting page only for now
         mirror_back_pages=True,  # ✅ default fix if you later enable backs
     )
 
-    fname = f"{show['slug']}-voting-cards-landscape.pdf"
+  fname = f"{show['slug']}-voting-cards-landscape.pdf"
+    if include_back:
+        fname = f"{show['slug']}-voting-cards-landscape-duplex.pdf"
+
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
