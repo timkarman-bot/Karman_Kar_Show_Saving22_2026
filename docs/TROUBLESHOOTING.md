@@ -1,39 +1,103 @@
 # Troubleshooting Guide (Railway + Flask)
 
-## 1) Railway shows 502 Bad Gateway
-**Meaning:** the app crashed on startup.
-**Fix:**
-- Open Railway → Deployments/Logs
-- Look for: `SyntaxError`, `IndentationError`, missing import, missing template.
+---
 
-## 2) Templates show raw `{% ... %}` on screen
-**Meaning:** you opened the HTML file directly.
-**Fix:** always visit the Flask routes (e.g., `/register`) from the Railway URL.
+## 502 Bad Gateway
 
-## 3) BuildError: Could not build url for endpoint ...
-**Meaning:** template calls `url_for()` with an endpoint that doesn't exist.
-**Fix:**
-- Confirm the route function name in `app.py` matches what the template uses.
-  Example: template uses `url_for('register_page')` so app.py must have `def register_page():`
+App crashed on startup.
 
-## 4) Stripe checkout doesn't open
-**Check Railway variables:**
-- `STRIPE_SECRET_KEY` must be set
-- `BASE_URL` should be your public Railway URL (no trailing slash)
+Check Railway logs for:
+- SyntaxError
+- IndentationError
+- ModuleNotFoundError
+- TemplateNotFound
 
-## 5) Votes not recording
-- Votes only record after Stripe payment succeeds.
-- Check `/success?session_id=...` logs.
-- Confirm `stripe_session_id` is unique; duplicates are ignored safely.
+---
 
-## 6) Voting says closed
-- Admin → Open voting (or Toggle voting).
+## ModuleNotFoundError: reportlab
 
-## 7) Check-in page saves but fields still look blank
-- Refresh. If still blank:
-  - Confirm `update_person()` and `update_show_car_details()` exist in database.py
-  - Confirm check-in POST route calls them
+Ensure:
+- reportlab==4.0.0,<5 is in requirements.txt
+- Railway is using requirements.txt
+- pyproject.toml is not overriding dependencies
 
-## 8) IndentationError on Railway
-- Windows editors can introduce tabs.
-- Fix: ensure Python uses 4 spaces (no tabs).
+---
+
+## Templates show raw {% %}
+
+You opened the HTML file directly.
+
+Use the Railway route URL instead.
+
+---
+
+## BuildError: Could not build url for endpoint
+
+Template is calling incorrect route name.
+
+Confirm url_for('route_name') matches function name in app.py.
+
+---
+
+## Stripe Checkout Not Opening
+
+Check Railway variables:
+- STRIPE_SECRET_KEY
+- BASE_URL (no trailing slash)
+
+---
+
+## Votes Not Recording
+
+Confirm:
+- /success route firing
+- stripe_session_id unique
+- record_paid_votes() executing
+
+---
+
+## Voting Says Closed
+
+Admin → Open Voting
+
+Or confirm VOTING_END environment variable.
+
+---
+
+## Check-in Saves but Looks Blank
+
+Confirm:
+- update_person()
+- update_show_car_details()
+- Browser refresh
+
+---
+
+## IndentationError
+
+Python requires:
+- 4 spaces
+- No tabs
+
+---
+
+## Print Cards PDF Not Generating
+
+Check:
+- utils/print_cards.py exists
+- reportlab installed
+- Lazy import inside route
+
+---
+
+# Live Show Quick Check
+
+Before event:
+
+- Voting open
+- Stripe test payment works
+- Print sheets load
+- Placeholder cars created
+- Leaderboard loads
+- Snapshot export works
+- Sponsor logos rendering

@@ -1,488 +1,260 @@
 # Karman Kar Shows & Events
-
 # Operations & Technical Guide
 
 ---
 
 # 1. System Overview
 
-Karman Kar Shows & Events is a multi-show Flask application that supports:
+Karman Kar Shows & Events is a multi-show Flask application designed for live event scalability.
 
-* Pre-printed QR windshield cards
-* Staff check-in
-* $1 per vote Stripe voting
-* Admin-only leaderboards
-* CSV exports
-* Sponsor management
-* Attendee opt-in capture
-* Paper waiver tracking
-* Snapshot ZIP exports
-* Multi-event support via `shows` table
+It supports:
+
+- Pre-printed QR windshield voting sheets (PDF generation)
+- Staff QR check-in workflow
+- $1-per-vote Stripe payments
+- Admin-only leaderboard
+- CSV vote exports
+- Sponsor management
+- Attendee opt-in capture
+- Paper waiver tracking
+- Snapshot ZIP disaster recovery exports
+- Multi-event support via `shows` table
+- Railway persistent volume storage
 
 The system is designed to:
 
-* Prevent unpaid votes
-* Protect personal data
-* Maintain clean audit trails
-* Support high-volume live events
-* Persist data safely using Railway volume storage
+- Prevent unpaid votes
+- Prevent duplicate Stripe votes
+- Protect personal data
+- Maintain audit trails
+- Support high-volume live events
+- Scale to multiple shows cleanly
 
 ---
 
-# 2. System Architecture
+# 2. Architecture
 
-### Backend
+## Backend
 
-* Python 3.11
-* Flask 2.3.x
-* SQLite (WAL mode)
-* Stripe Checkout Sessions
-* Gunicorn (Railway deployment)
+- Python 3.11
+- Flask 2.3.x
+- SQLite (WAL mode enabled)
+- Stripe Checkout Sessions
+- Gunicorn (Railway deployment)
+- ReportLab (PDF windshield card generation)
 
-### Database
+## Database Location
 
-SQLite file stored at:
+Railway production:
 
-```
-/data/app.db   (Railway volume)
-```
+/data/app.db
 
-If no volume exists:
+Local fallback:
 
-```
-app.db (local fallback)
-```
-
-### Data Protection Strategy
-
-* No vote recorded until Stripe confirms payment
-* Stripe session ID must be unique
-* Admin routes separated
-* Opt-in stored explicitly
-* Waiver tracking timestamped
+app.db
 
 ---
 
 # 3. Core URL Map
 
-| Function              | Route                                        |
-| --------------------- | -------------------------------------------- |
-| Home                  | `/`                                          |
-| Show page             | `/show/<slug>`                               |
-| Register car          | `/register`                                  |
-| Windshield print page | `/r/<show_slug>/<car_token>`                 |
-| Staff check-in        | `/checkin/<show_slug>/<car_token>`           |
-| Vote page             | `/v/<show_slug>/<car_token>/<category_slug>` |
-| Admin panel           | `/admin`                                     |
-| Leaderboard           | `/admin/leaderboard`                         |
-| Export CSV            | `/admin/export-votes.csv`                    |
-| Export Snapshot ZIP   | `/admin/export-snapshot.zip`                 |
-| Placeholder generator | `/admin/placeholders`                        |
+| Function | Route |
+|----------|-------|
+| Home | `/` |
+| Show page | `/show/<slug>` |
+| Register car | `/register` |
+| Registration complete | `/r/<show_slug>/<car_token>` |
+| Staff check-in | `/checkin/<show_slug>/<car_token>` |
+| Vote page | `/v/<show_slug>/<car_token>/<category_slug>` |
+| Admin panel | `/admin` |
+| Leaderboard | `/admin/leaderboard` |
+| Export votes CSV | `/admin/export-votes.csv` |
+| Export snapshot ZIP | `/admin/export-snapshot.zip` |
+| Placeholder generator | `/admin/placeholders` |
+| Print voting cards PDF | `/admin/print-cards.pdf` |
 
 ---
 
-# 4. Pre-Show Workflow
+# 4. Registration Logic
 
-### 1️⃣ Deploy
+## Pre-registration availability
 
-* Confirm Railway variables
-* Confirm DB volume mounted
-* Confirm `/admin` loads
+Determined by:
 
-### 2️⃣ Create Placeholder Cars
+prereg_allowed(show)
 
-Admin → Placeholder Cars
+Logic:
 
-Example:
-
-* Start: 1
-* Count: 300
-
-This:
-
-* Creates placeholder people rows
-* Creates car tokens
-* Locks in car numbers
-
-### 3️⃣ Print Windshield Sheets
-
-Visit:
-
-```
-/r/<show_slug>/<car_token>
-```
-
-Print:
-
-* Car number
-* Vote QR
-* Staff check-in QR
-
-Bring to show.
+1. If allow_prereg_override exists:
+   - 1 → allow
+   - 0 → block
+2. Otherwise:
+   - show_type == "full" → allow
+   - show_type == "popup" → block
 
 ---
 
-# 5. Day-Of Show Workflow
+## Registration Validation Rules
+
+Required:
+- name
+- car_number
+- year
+- make
+- model
+
+Conditional:
+- If opt_in_future == True → phone is required
+- Email is optional
+
+---
+
+# 5. Windshield Voting Sheet
+
+Generated via:
+
+/admin/print-cards.pdf
+
+Uses:
+
+utils/print_cards.py
+
+Features:
+
+- Landscape 8.5x11
+- Category QR codes
+- Sponsor strip
+- Title sponsor section
+- Optional mirrored back page
+- Lazy ReportLab import to prevent boot crash
+
+---
+
+# 6. Day-of Show Workflow
 
 ## Staff Flow
 
 1. Assign pre-printed card
-2. Scan STAFF QR
-3. Fill in:
-
-   * Owner name
-   * Phone
-   * Email
-   * Year / Make / Model
-   * Marketing opt-in
+2. Scan staff QR
+3. Enter:
+   - Owner name
+   - Phone (required)
+   - Email (optional)
+   - Year / Make / Model
+   - Marketing opt-in
 4. Save
 
 Database updates:
-
-* `people`
-* `show_cars`
-* Waiver fields (if marked)
+- people
+- show_cars
 
 ---
 
 ## Voter Flow
 
-1. Scan category QR
+1. Scan QR
 2. Select vote quantity
-3. Stripe checkout opens
-4. On success → `/success`
-5. Vote recorded only after Stripe success
+3. Stripe Checkout
+4. Redirect to /success
+5. Backend verifies Stripe session
+6. record_paid_votes() executes
 
-Votes table stores:
-
-* show_id
-* show_car_id
-* category
-* vote_qty
-* amount_cents
-* stripe_session_id (unique)
-
-No payment → no vote.
+Votes are stored only after payment confirmation.
 
 ---
 
-# 6. End-Of-Show Workflow
+# 7. Stripe Payment Flow
 
-1. Admin → Close Voting
-2. Admin → View Leaderboard
-3. Admin → Export Votes CSV
-4. Optional: Export Snapshot ZIP
-
-Snapshot ZIP contains:
-
-* show.csv
-* cars.csv
-* people.csv
-* votes.csv
-
-This is your disaster recovery archive.
-
----
-
-# 7. Opt-In Compliance System
-
-We collect marketing preferences in two places:
-
-## Car Owner (people table)
-
-```
-opt_in_future INTEGER
-```
-
-Meaning:
-
-* 1 = agreed to receive event updates
-* 0 = no marketing contact
-
-## Attendees
-
-```
-sponsor_opt_in INTEGER
-updates_opt_in INTEGER
-consent_text TEXT
-consent_version TEXT
-```
-
-Policy:
-
-* We do not sell data.
-* Sponsors may contact only if sponsor_opt_in = 1.
-* Consent text stored for audit trail.
-
----
-
-# 8. Waiver Tracking
-
-Paper-first approach.
-
-Fields in `show_cars`:
-
-```
-waiver_received INTEGER
-waiver_received_at TEXT
-waiver_received_by TEXT
-```
-
-Marked via:
-
-```
-waiver_mark_received()
-```
-
-This allows:
-
-* Staff accountability
-* Legal record
-* Timestamped verification
-
----
-
-# 9. Database Structure Overview
-
-## shows
-
-Stores each event.
-
-Key fields:
-
-* slug (unique identifier)
-* is_active (only one active at a time)
-* voting_open
-
----
-
-## people
-
-Car owners.
-
----
-
-## show_cars
-
-Cars tied to a specific show.
-Includes waiver tracking.
-
----
-
-## votes
-
-Payment-verified votes.
-
----
-
-## sponsors
-
-Master sponsor list.
-
----
-
-## show_sponsors
-
-Sponsors attached to a show.
-Supports:
-
-* Title sponsor
-* Sort order
-
----
-
-## attendees
-
-General attendees/donors.
-
----
-
-## donations
-
-Stripe donation tracking.
-
----
-
-## field_metrics
-
-Tracks:
-
-* Phone provided?
-* Email provided?
-
-Used to measure data completeness.
-
----
-
-# 10. Stripe Payment Flow
-
-1. User selects vote qty
-2. Backend creates Stripe checkout session
-3. Redirect to Stripe
-4. Stripe redirects to:
-
-```
-/success?session_id=...
-```
-
-5. Backend verifies session
-6. record_paid_votes() called
-7. Vote saved
+1. Backend creates checkout session
+2. Stripe processes payment
+3. Stripe redirects to /success?session_id=...
+4. Backend verifies payment_status == "paid"
+5. Vote is recorded
+6. stripe_session_id must be unique
 
 Duplicate session IDs are ignored safely.
 
 ---
 
-# 11. Railway Deployment Reference
+# 8. Opt-In Compliance
 
-## Required Variables
+## Car Owners
 
-* ADMIN_PASSWORD
-* FLASK_SECRET
-* STRIPE_SECRET_KEY
-* BASE_URL
+Field:
+opt_in_future INTEGER
 
-## Optional
+- 1 = agreed to receive event updates
+- 0 = no marketing contact
 
-* STRIPE_WEBHOOK_SECRET
-* DB_PATH
+Phone required only if opted in.
 
-## Start Command
+## Attendees
 
-```
+Fields:
+- sponsor_opt_in
+- updates_opt_in
+- consent_text
+- consent_version
+
+Consent text stored for audit trail.
+
+Policy:
+- No data selling.
+- Sponsors may contact only if sponsor_opt_in = 1.
+
+---
+
+# 9. Waiver Tracking
+
+Fields in show_cars:
+
+- waiver_received
+- waiver_received_at
+- waiver_received_by
+
+Marked via:
+waiver_mark_received()
+
+Provides timestamped verification.
+
+---
+
+# 10. Snapshot & Disaster Recovery
+
+Admin → Export Snapshot ZIP
+
+Contains:
+- show.csv
+- cars.csv
+- people.csv
+- votes.csv
+
+If corruption occurs:
+1. Replace /data/app.db
+2. Restart Railway
+
+---
+
+# 11. Railway Deployment
+
+Required Variables:
+- ADMIN_PASSWORD
+- FLASK_SECRET
+- STRIPE_SECRET_KEY
+- BASE_URL
+
+Start Command:
+
 gunicorn app:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT
-```
 
 ---
 
-# 12. Troubleshooting Matrix
+# 12. System Design Principles
 
-## 502 Bad Gateway
-
-App crashed.
-Check Railway logs.
-
----
-
-## NameError: conn not defined
-
-Database init corrupted.
-Fix indentation.
-Ensure:
-
-```
-conn = _conn()
-cur = conn.cursor()
-```
-
----
-
-## Voting says closed
-
-Admin → Toggle voting.
-
----
-
-## Stripe doesn’t open
-
-Check:
-
-* STRIPE_SECRET_KEY
-* BASE_URL
-* No trailing slash
-
----
-
-## Votes not recording
-
-Confirm:
-
-* Stripe success route firing
-* Unique stripe_session_id
-* record_paid_votes() being called
-
----
-
-## Check-in saves but looks blank
-
-Confirm:
-
-* update_person()
-* update_show_car_details()
-* Refresh browser
-
----
-
-## Waiver not marking
-
-Confirm:
-
-* waiver_mark_received() exists
-* Route calling it
-* DB columns exist
-
----
-
-## Templates show raw `{% %}`
-
-You opened file directly.
-Use Flask route URL.
-
----
-
-## IndentationError
-
-Use 4 spaces.
-No tabs.
-
----
-
-# 13. Disaster Recovery Procedure
-
-If corruption or crash:
-
-1. Restore snapshot ZIP
-2. Replace `/data/app.db`
-3. Restart Railway
-
----
-
-# 14. Recommended Admin Testing Checklist
-
-Before every live show:
-
-* [ ] Voting open
-* [ ] Placeholder cars created
-* [ ] Print sheets working
-* [ ] Stripe test payment works
-* [ ] Leaderboard loads
-* [ ] CSV export works
-* [ ] Waiver marking works
-* [ ] Sponsor display correct
-* [ ] Opt-in saving correctly
-* [ ] Snapshot export working
-
----
-
-# 15. System Design Principles
-
-* Payment before vote
-* No duplicate votes
-* No silent data selling
-* Paper waiver compliance
-* Staff accountability
-* Multi-event scalable
-* Exportable for audit
-* Railway-safe persistence
-
----
-
-If you'd like, next I can:
-
-* Convert this into a printable PDF manual
-* Create a Staff Quick Reference Sheet (1 page)
-* Create an Admin Quick Control Sheet
-* Create a Data & Legal Compliance Addendum
-* Or create a technical architecture diagram
-
-Tell me which direction you want next.
+- Payment before vote
+- No duplicate Stripe votes
+- Minimal required data collection
+- Paper waiver compliance
+- Audit trail preservation
+- Multi-event scalability
+- Railway-safe persistence
+- Exportable records

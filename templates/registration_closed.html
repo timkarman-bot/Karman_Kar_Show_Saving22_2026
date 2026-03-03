@@ -3,48 +3,39 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto">
-
-  <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+  <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-7">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-600 text-white text-xs">
       Registration closed
     </div>
 
-    <h1 class="mt-4 text-3xl font-semibold tracking-tight">
-      Pre-registration is not available for this show.
-    </h1>
+    <h1 class="mt-4 text-3xl font-semibold tracking-tight">Pre-registration is not available</h1>
+
+    <p class="mt-2 text-slate-700">
+      This show is currently set to a pop-up / day-of workflow, so pre-registration is turned off.
+      If you believe this is a mistake, an admin can enable it under <span class="font-semibold">Admin → Show Settings</span>.
+    </p>
 
     {% if show %}
-      <div class="mt-2 text-slate-700">
-        <div class="font-semibold">{{ show["title"] }}</div>
-        {% if show["date"] or show["time"] %}
-          <div class="text-sm text-slate-600">
-            {{ show["date"] }}{% if show["time"] %} • {{ show["time"] }}{% endif %}
-          </div>
-        {% endif %}
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-sm text-slate-800">
+          <div class="font-semibold">{{ show["title"] }}</div>
+          {% if show["date"] %}<div class="mt-1 text-slate-600">{{ show["date"] }}</div>{% endif %}
+          {% if show["location_name"] %}<div class="mt-1 text-slate-600">{{ show["location_name"] }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="mt-6 flex flex-wrap gap-3">
+        <a class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90"
+           href="{{ url_for('show_page', slug=show['slug']) }}">
+          Back to show
+        </a>
+
+        <a class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50"
+           href="{{ url_for('events') }}">
+          View events
+        </a>
       </div>
     {% endif %}
-
-    <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div class="font-semibold">What to do next</div>
-      <div class="mt-1 text-sm text-slate-700">
-        Please arrive at the event to check in and get your car number.
-      </div>
-    </div>
-
-    <div class="mt-6 flex flex-wrap gap-3">
-      <a class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90"
-         href="{{ url_for('home') }}">
-        Back to home
-      </a>
-
-      {% if show %}
-        <a class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50"
-           href="{{ url_for('show_page', slug=show['slug']) }}">
-          View show info
-        </a>
-      {% endif %}
-    </div>
   </section>
-
 </div>
 {% endblock %}

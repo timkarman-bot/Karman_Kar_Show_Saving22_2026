@@ -1,66 +1,126 @@
 {% extends "base.html" %}
-{% set title = "Register • Karman Kar Shows & Events" %}
+{% set title = "Register • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
 
 {% block content %}
-<div class="max-w-3xl">
-  <h1 class="text-3xl font-semibold tracking-tight">Car registration</h1>
-  <p class="mt-2 text-slate-600">Required fields help match winners to the right person for this show.</p>
+<div class="max-w-3xl mx-auto">
+  <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-7">
+    <h1 class="text-3xl font-semibold tracking-tight">Register your car</h1>
+    {% if show %}
+      <div class="mt-1 text-slate-600">{{ show["title"] }}</div>
+    {% endif %}
 
-  {% if error %}
-    <div class="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">{{ error }}</div>
-  {% endif %}
+    {% if error %}
+      <div class="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
+        {{ error }}
+      </div>
+    {% endif %}
 
-  <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
-    <form method="POST" class="grid gap-6">
-      <div class="grid gap-4 md:grid-cols-2">
-        <div>
-          <label class="text-sm font-semibold">Name *</label>
-          <input name="name" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
-        </div>
+    <form class="mt-6 grid gap-4" method="post" action="{{ url_for('register_submit') }}">
+      <div class="grid gap-2">
+        <label class="text-sm font-semibold text-slate-800" for="name">Full name *</label>
+        <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+               id="name" name="name" autocomplete="name" required />
+      </div>
 
-        <div>
-          <label class="text-sm font-semibold">Car number (for this show) *</label>
-          <input name="car_number" inputmode="numeric" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., 12" required>
-        </div>
-
-        <div>
-          <label class="text-sm font-semibold">Phone *</label>
-          <input name="phone" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
-        </div>
-
-        <div>
-          <label class="text-sm font-semibold">Email *</label>
-          <input name="email" type="email" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+      <div class="grid gap-2">
+        <label class="text-sm font-semibold text-slate-800" for="phone">
+          Phone <span id="phoneRequiredHint" class="text-slate-500 font-normal">(required if you opt in)</span>
+        </label>
+        <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+               id="phone" name="phone" inputmode="tel" autocomplete="tel" />
+        <div id="phoneHelp" class="text-xs text-slate-500">
+          Used for event updates only if you choose to receive them.
         </div>
       </div>
 
-      <div class="grid gap-4 md:grid-cols-3">
-        <div>
-          <label class="text-sm font-semibold">Year *</label>
-          <input name="year" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., 1977" required>
-        </div>
-        <div>
-          <label class="text-sm font-semibold">Make *</label>
-          <input name="make" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., MG" required>
-        </div>
-        <div>
-          <label class="text-sm font-semibold">Model *</label>
-          <input name="model" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="e.g., MGB" required>
+      <div class="grid gap-2">
+        <label class="text-sm font-semibold text-slate-800" for="email">Email (optional)</label>
+        <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+               id="email" name="email" type="email" autocomplete="email" />
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input id="opt_in_future" name="opt_in_future" type="checkbox" class="mt-1" />
+          <span class="text-sm text-slate-800">
+            I’d like to receive event updates and future show info.
+            <span class="block mt-1 text-xs text-slate-500">
+              Msg/data rates may apply. Opt out anytime.
+            </span>
+          </span>
+        </label>
+
+        <div id="optinWarning" class="hidden mt-3 text-xs text-amber-800 border border-amber-200 bg-amber-50 rounded-xl p-3">
+          Phone is required when opting in to updates.
         </div>
       </div>
 
-      <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <input type="checkbox" name="opt_in_future" class="mt-1">
-        <div>
-          <div class="font-semibold">Contact me about future events</div>
-          <div class="text-sm text-slate-600">Optional. You can opt in to get details about upcoming shows.</div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="grid gap-2">
+          <label class="text-sm font-semibold text-slate-800" for="car_number">Car number *</label>
+          <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+                 id="car_number" name="car_number" inputmode="numeric" required />
         </div>
-      </label>
 
-      <button class="btn btn-primary w-fit" type="submit">
-        Submit registration
-      </button>
+        <div class="grid gap-2">
+          <label class="text-sm font-semibold text-slate-800" for="year">Year *</label>
+          <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+                 id="year" name="year" inputmode="numeric" required />
+        </div>
+
+        <div class="grid gap-2">
+          <label class="text-sm font-semibold text-slate-800" for="make">Make *</label>
+          <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+                 id="make" name="make" required />
+        </div>
+
+        <div class="grid gap-2">
+          <label class="text-sm font-semibold text-slate-800" for="model">Model *</label>
+          <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+                 id="model" name="model" required />
+        </div>
+      </div>
+
+      <div class="mt-2 flex flex-wrap gap-3">
+        <button class="px-6 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90" type="submit">
+          Complete registration
+        </button>
+
+        {% if show %}
+          <a class="px-6 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50"
+             href="{{ url_for('show_page', slug=show['slug']) }}">
+            Cancel
+          </a>
+        {% endif %}
+      </div>
     </form>
-  </div>
+  </section>
 </div>
+
+<script>
+  (function () {
+    const optIn = document.getElementById("opt_in_future");
+    const phone = document.getElementById("phone");
+    const warn = document.getElementById("optinWarning");
+    const hint = document.getElementById("phoneRequiredHint");
+
+    function sync() {
+      const needsPhone = !!optIn.checked;
+      phone.required = needsPhone;
+
+      if (needsPhone) {
+        warn.classList.remove("hidden");
+        hint.textContent = "(required)";
+      } else {
+        warn.classList.add("hidden");
+        hint.textContent = "(required if you opt in)";
+      }
+    }
+
+    if (optIn && phone) {
+      optIn.addEventListener("change", sync);
+      sync();
+    }
+  })();
+</script>
 {% endblock %}
