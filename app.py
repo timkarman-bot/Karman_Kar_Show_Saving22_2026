@@ -309,12 +309,31 @@ def register_submit():
 
     # Conditional requirement:
     # If they want updates / sponsor info, require phone. Email can remain optional.
-    if opt_in_future and not phone:
-        return render_template(
-            "register.html",
-            show=show,
-            error="Phone number is required if you choose to receive updates.",
-        )
+    if not (name and car_number_raw and year and make and model):
+    return render_template(
+        "register.html",
+        show=show,
+        error="Please fill out all required fields.",
+    )
+
+# Phone required IF opting in
+if opt_in_future and not phone:
+    return render_template(
+        "register.html",
+        show=show,
+        error="Phone number is required if you choose to receive updates.",
+    )
+
+try:
+    car_number = int(car_number_raw)
+    if car_number <= 0:
+        raise ValueError()
+except ValueError:
+    return render_template(
+        "register.html",
+        show=show,
+        error="Car number must be a positive number.",
+    )
 
     try:
         car_number = int(car_number_raw)
