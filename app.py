@@ -307,33 +307,13 @@ def register_submit():
             error="Please fill out all required fields.",
         )
 
-    # Conditional requirement:
-    # If they want updates / sponsor info, require phone. Email can remain optional.
-    if not (name and car_number_raw and year and make and model):
-    return render_template(
-        "register.html",
-        show=show,
-        error="Please fill out all required fields.",
-    )
-
-# Phone required IF opting in
-if opt_in_future and not phone:
-    return render_template(
-        "register.html",
-        show=show,
-        error="Phone number is required if you choose to receive updates.",
-    )
-
-try:
-    car_number = int(car_number_raw)
-    if car_number <= 0:
-        raise ValueError()
-except ValueError:
-    return render_template(
-        "register.html",
-        show=show,
-        error="Car number must be a positive number.",
-    )
+    # Phone required IF opting in (email stays optional)
+    if opt_in_future and not phone:
+        return render_template(
+            "register.html",
+            show=show,
+            error="Phone number is required if you choose to receive updates.",
+        )
 
     try:
         car_number = int(car_number_raw)
@@ -492,6 +472,14 @@ def attendee_submit(show_slug: str):
 
     if not (first_name and last_name):
         return render_template("attendee.html", show=show, error="First and last name are required.")
+
+    # Require phone if opting into sponsor or updates
+    if (sponsor_opt_in or updates_opt_in) and not phone:
+        return render_template(
+            "attendee.html",
+            show=show,
+            error="Phone number is required if you choose to receive updates or sponsor information.",
+        )
 
     consent_text = (
         "By selecting these options, you agree Karman Kar Shows & Events may contact you about the event and, "
