@@ -1,4 +1,4 @@
-# app.py 03/02/2026 14:55 
+# app.py 03/03/2026 12:39
 # Karman Kar Shows & Events — Car show registration + QR voting + admin controls
 # 4-space indentation only (no tabs)
 
@@ -300,15 +300,32 @@ def register_submit():
     make = request.form.get("make", "").strip()
     model = request.form.get("model", "").strip()
 
-    if not (name and phone and email and car_number_raw and year and make and model):
-        return render_template("register.html", show=show, error="Please fill out all required fields.")
+    if not (name and car_number_raw and year and make and model):
+        return render_template(
+            "register.html",
+            show=show,
+            error="Please fill out all required fields.",
+        )
+
+    # Conditional requirement:
+    # If they want updates / sponsor info, require phone. Email can remain optional.
+    if opt_in_future and not phone:
+        return render_template(
+            "register.html",
+            show=show,
+            error="Phone number is required if you choose to receive updates.",
+        )
 
     try:
         car_number = int(car_number_raw)
         if car_number <= 0:
             raise ValueError()
     except ValueError:
-        return render_template("register.html", show=show, error="Car number must be a positive number.")
+        return render_template(
+            "register.html",
+            show=show,
+            error="Car number must be a positive number.",
+        )
 
     sponsor_opt_in = False  # car-owner form currently has no sponsor checkbox
     person_id = create_person(
@@ -780,7 +797,8 @@ def admin_show_settings():
 
     flash("Registration settings saved.", "ok")
     return redirect(url_for("admin_page"))
-    
+
+
 @app.get("/admin/print-cards.pdf")
 @require_admin
 def admin_print_cards_pdf():
@@ -791,7 +809,6 @@ def admin_print_cards_pdf():
     if not show:
         return "No active show.", 500
 
-    # ...the rest of your PDF logic...
     ids_raw = request.args.get("ids", "").strip()
     all_raw = request.args.get("all", "").strip()
 
@@ -824,8 +841,8 @@ def admin_print_cards_pdf():
         static_root=os.path.join(app.root_path, "static"),
         title_sponsor=title_sponsor,
         sponsors=sponsors,
-        include_back=False,          # front voting page only for now
-        mirror_back_pages=True,      # ✅ default fix if you later enable backs
+        include_back=False,      # front voting page only for now
+        mirror_back_pages=True,  # ✅ default fix if you later enable backs
     )
 
     fname = f"{show['slug']}-voting-cards-landscape.pdf"
@@ -835,7 +852,6 @@ def admin_print_cards_pdf():
         as_attachment=True,
         download_name=fname,
     )
-
 
 
 # ---- Snapshot export + close voting/export ----

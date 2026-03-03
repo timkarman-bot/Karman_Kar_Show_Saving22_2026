@@ -4,15 +4,10 @@
 from __future__ import annotations
 
 import io
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import qrcode
 from PIL import Image
-from reportlab.lib.pagesizes import letter, landscape
-from reportlab.lib.units import inch
-from reportlab.lib.utils import ImageReader
-from reportlab.pdfgen import canvas as rl_canvas
-
 
 CATEGORY_SLUGS: List[Tuple[str, str]] = [
     ("army", "Army"),
@@ -47,10 +42,17 @@ def make_qr(url: str, box_size: int = 7, border: int = 2) -> Image.Image:
     return qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
 
-def draw_image_contain(c: rl_canvas.Canvas, img: Image.Image, x: float, y: float, w: float, h: float) -> None:
+def draw_image_contain(c: Any, img: Image.Image, x: float, y: float, w: float, h: float) -> None:
+    """
+    Draw PIL image into a ReportLab canvas, contained within (x,y,w,h).
+    Imports reportlab lazily so importing this module won't crash the app if reportlab isn't installed yet.
+    """
+    from reportlab.lib.utils import ImageReader  # lazy import
+
     iw, ih = img.size
     if iw <= 0 or ih <= 0:
         return
+
     scale = min(w / iw, h / ih)
     nw, nh = iw * scale, ih * scale
     dx, dy = x + (w - nw) / 2, y + (h - nh) / 2
@@ -59,6 +61,7 @@ def draw_image_contain(c: rl_canvas.Canvas, img: Image.Image, x: float, y: float
     bg = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
     bg.alpha_composite(rgba)
     final = bg.convert("RGB")
+
     c.drawImage(ImageReader(final), dx, dy, width=nw, height=nh, mask="auto")
 
 
@@ -71,7 +74,7 @@ def build_landscape_cards_pdf(
     title_sponsor: Optional[dict],
     sponsors: List[dict],
     include_back: bool = False,
-    mirror_back_pages: bool = True,  # ✅ default ON to avoid “backwards” duplex prints
+    mirror_back_pages: bool = True,  # default ON to avoid “backwards” duplex prints
 ) -> bytes:
     """
     Landscape 8.5x11 per car.
@@ -83,7 +86,13 @@ def build_landscape_cards_pdf(
     Back page:
     - Owner check-in QR only (optional)
     - Mirrored by default for common duplex workflows.
+
+    NOTE: ReportLab imports are inside this function so the app can boot even if reportlab isn't installed.
     """
+    from reportlab.lib.pagesizes import letter, landscape  # lazy imports
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas as rl_canvas
+
     page_w, page_h = landscape(letter)
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=landscape(letter))
