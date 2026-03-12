@@ -1305,12 +1305,15 @@ def admin_print_cards_pdf():
     show = get_active_show()
     if not show:
         return "No active show.", 500
+
     ids_raw = request.args.get("ids", "").strip()
     all_raw = request.args.get("all", "").strip()
     include_back = request.args.get("back", "").strip() == "1"
+
     cars = list_show_cars_public(int(show["id"]))
     if not cars:
         return "No cars to print.", 400
+
     selected = cars
     if all_raw != "1":
         want_ids = set()
@@ -1319,33 +1322,38 @@ def admin_print_cards_pdf():
                 part = part.strip()
                 if part.isdigit():
                     want_ids.add(int(part))
+
         if not want_ids:
             return "No cars selected.", 400
-        selected = [r for r in cars if int(r["id"]) in want_ids]
-    title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
-    pdf_bytes = build_landscape_cards_pdf(
-    show=dict(show),
-    cars_rows=[dict(r) for r in selected],
-    base_url=_abs_url(""),
-    static_root=os.path.join(app.root_path, "static"),
-    title_sponsor=title_sponsor,
-    sponsors=sponsors,
-    include_back=include_back,
-    mirror_back_pages=True,
-)
-_log_event(
-    "admin.print_cards_exported",
-    int(show["id"]),
-    {"count": len(selected), "include_back": include_back},
-    actor_type="admin",
-)
-return send_file(
-    io.BytesIO(pdf_bytes),
-    mimetype="application/pdf",
-    as_attachment=True,
-    download_name=f"{show['slug']}-voting-cards-landscape.pdf",
-)
 
+        selected = [r for r in cars if int(r["id"]) in want_ids]
+
+    title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
+
+    pdf_bytes = build_landscape_cards_pdf(
+        show=dict(show),
+        cars_rows=[dict(r) for r in selected],
+        base_url=_abs_url(""),
+        static_root=os.path.join(app.root_path, "static"),
+        title_sponsor=title_sponsor,
+        sponsors=sponsors,
+        include_back=include_back,
+        mirror_back_pages=True,
+    )
+
+    _log_event(
+        "admin.print_cards_exported",
+        int(show["id"]),
+        {"count": len(selected), "include_back": include_back},
+        actor_type="admin",
+    )
+
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"{show['slug']}-voting-cards-landscape.pdf",
+    )
 @app.get("/admin/export-snapshot.zip")
 @require_admin
 def admin_export_snapshot_zip():
