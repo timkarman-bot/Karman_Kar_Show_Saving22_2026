@@ -1323,10 +1323,28 @@ def admin_print_cards_pdf():
             return "No cars selected.", 400
         selected = [r for r in cars if int(r["id"]) in want_ids]
     title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
-    pdf_bytes = build_landscape_cards_pdf(dict(show), [dict(r) for r in selected], _abs_url(""), os.path.join(app.root_path, "static"), title_sponsor, sponsors, include_back, mirror_back_pages=True)
-    _log_event("admin.print_cards_exported", int(show["id"]), {"count": len(selected), "include_back": include_back}, actor_type="admin")
-    return send_file(io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True, download_name=f"{show['slug']}-voting-cards-landscape.pdf")
-
+    pdf_bytes = build_landscape_cards_pdf(
+    show=dict(show),
+    cars_rows=[dict(r) for r in selected],
+    base_url=_abs_url(""),
+    static_root=os.path.join(app.root_path, "static"),
+    title_sponsor=title_sponsor,
+    sponsors=sponsors,
+    include_back=include_back,
+    mirror_back_pages=True,
+)
+_log_event(
+    "admin.print_cards_exported",
+    int(show["id"]),
+    {"count": len(selected), "include_back": include_back},
+    actor_type="admin",
+)
+return send_file(
+    io.BytesIO(pdf_bytes),
+    mimetype="application/pdf",
+    as_attachment=True,
+    download_name=f"{show['slug']}-voting-cards-landscape.pdf",
+)
 
 @app.get("/admin/export-snapshot.zip")
 @require_admin
