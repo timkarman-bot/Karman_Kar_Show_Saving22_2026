@@ -1,4 +1,3 @@
-python
 # app.py
 # Karman Kar Shows & Events — charity-owned Stripe Connect checkout + webhook confirmation
 # 4-space indentation only (no tabs)
