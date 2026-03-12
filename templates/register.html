@@ -1,31 +1,3 @@
-Here is the **complete replacement** for `templates/register.html` that matches the **new paid registration + electronic waiver + charity-owned checkout** flow.
-
-This version adds:
-
-* sponsor info opt-in
-* registration fee display
-* waiver acceptance
-* typed signature
-* posts into the **new registration checkout flow**
-* keeps capacity and disclosure display
-* keeps opt-in phone requirement logic
-* validates waiver before submit in the browser
-
-It will compile as Jinja.
-
-It assumes the upcoming new `app.py` will:
-
-* keep the route name `register_page`
-* keep the POST route name `register_submit`
-* accept these new form fields:
-
-  * `sponsor_opt_in`
-  * `waiver_accepted`
-  * `waiver_signed_name`
-
----
-
-```html
 {% extends "base.html" %}
 {% set title = "Register • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
 
@@ -275,12 +247,15 @@ It assumes the upcoming new `app.py` will:
     const waiverWarning = document.getElementById("waiverWarning");
 
     function syncPhoneRequirement() {
-      const needsPhone = !!(optIn && optIn.checked) || !!(sponsorOptIn && sponsorOptIn.checked);
+      const needsPhone =
+        !!(optIn && optIn.checked) ||
+        !!(sponsorOptIn && sponsorOptIn.checked);
+
       phone.required = needsPhone;
 
       if (needsPhone) {
         warn.classList.remove("hidden");
-        hint.textContent = "(required if you opt in)";
+        hint.textContent = "(required if opting in)";
       } else {
         warn.classList.add("hidden");
         hint.textContent = "(required if you opt in)";
@@ -300,17 +275,32 @@ It assumes the upcoming new `app.py` will:
       return true;
     }
 
-    if (optIn) optIn.addEventListener("change", syncPhoneRequirement);
-    if (sponsorOptIn) sponsorOptIn.addEventListener("change", syncPhoneRequirement);
-    if (waiverAccepted) waiverAccepted.addEventListener("change", validateWaiver);
-    if (waiverSignedName) waiverSignedName.addEventListener("input", validateWaiver);
+    if (optIn) {
+      optIn.addEventListener("change", syncPhoneRequirement);
+    }
+
+    if (sponsorOptIn) {
+      sponsorOptIn.addEventListener("change", syncPhoneRequirement);
+    }
+
+    if (waiverAccepted) {
+      waiverAccepted.addEventListener("change", validateWaiver);
+    }
+
+    if (waiverSignedName) {
+      waiverSignedName.addEventListener("input", validateWaiver);
+    }
 
     if (form) {
       form.addEventListener("submit", function (e) {
         syncPhoneRequirement();
+
         if (!validateWaiver()) {
           e.preventDefault();
-          waiverSignedName.focus();
+
+          if (waiverSignedName && !waiverSignedName.value.trim()) {
+            waiverSignedName.focus();
+          }
         }
       });
     }
@@ -320,15 +310,3 @@ It assumes the upcoming new `app.py` will:
   })();
 </script>
 {% endblock %}
-```
-
-## Important compile note
-
-# This template is meant for the **new app.py** and **new database.py** together.
-
-# Your current `register.html` only supports direct registration with no payment and no electronic waiver capture. This replacement is designed for the next backend step where:
-
-# * the form creates a **registration intent**
-# * then redirects to **charity-owned checkout**
-# * then webhook finalizes the actual car registration
-

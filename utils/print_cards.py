@@ -44,10 +44,11 @@ def make_qr(url: str, box_size: int = 7, border: int = 2) -> Image.Image:
 
 def draw_image_contain(c: Any, img: Image.Image, x: float, y: float, w: float, h: float) -> None:
     """
-    Draw PIL image into a ReportLab canvas, contained within (x,y,w,h).
-    Imports reportlab lazily so importing this module won't crash the app if reportlab isn't installed yet.
+    Draw PIL image into a ReportLab canvas, contained within (x, y, w, h).
+    Imports reportlab lazily so importing this module won't crash the app
+    if reportlab isn't installed yet.
     """
-    from reportlab.lib.utils import ImageReader  # lazy import
+    from reportlab.lib.utils import ImageReader
 
     iw, ih = img.size
     if iw <= 0 or ih <= 0:
@@ -74,22 +75,25 @@ def build_landscape_cards_pdf(
     title_sponsor: Optional[dict],
     sponsors: List[dict],
     include_back: bool = False,
-    mirror_back_pages: bool = True,  # default ON to avoid “backwards” duplex prints
+    mirror_back_pages: bool = True,
 ) -> bytes:
     """
     Landscape 8.5x11 per car.
 
-    Sponsors:
-    - Load logos ONLY from static/img... based on DB logo_path (e.g. img/sponsors/acme.png)
-    - If no logo_path or file missing → show NOTHING (no box, no placeholder).
+    Front:
+    - Voting QR codes
+    - Title sponsor and sponsor strip
+    - Basic owner/vehicle write-in area
 
-    Back page:
-    - Owner check-in QR only (optional)
-    - Mirrored by default for common duplex workflows.
+    Back (optional duplex):
+    - Owner registration / placeholder claim QR
+    - For placeholder/day-of cards this points to /claim/<show_slug>/<car_token>
 
-    NOTE: ReportLab imports are inside this function so the app can boot even if reportlab isn't installed.
+    NOTE:
+    ReportLab imports are inside this function so the app can boot even if
+    reportlab isn't installed yet.
     """
-    from reportlab.lib.pagesizes import letter, landscape  # lazy imports
+    from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib.units import inch
     from reportlab.pdfgen import canvas as rl_canvas
 
@@ -108,7 +112,6 @@ def build_landscape_cards_pdf(
             return None
         return safe_open_rgba(static_fs(lp))
 
-    # Main brand logo (optional)
     brand_logo = safe_open_rgba(static_fs("img/karmankarshows-logo.png"))
 
     title_logo = sponsor_logo_img(title_sponsor)
@@ -118,14 +121,15 @@ def build_landscape_cards_pdf(
         if img:
             std_logos.append(img)
 
-    # Slightly larger margin to avoid printer/browser header overlap
     margin = 0.85 * inch
 
     for r in cars_rows:
         car_number = int(r["car_number"])
         car_token = str(r["car_token"])
 
-        # Header
+        # ----------------------------
+        # FRONT PAGE
+        # ----------------------------
         header_logo_w = 2.2 * inch
         header_logo_h = 0.75 * inch
         header_y = page_h - margin - header_logo_h
@@ -141,13 +145,13 @@ def build_landscape_cards_pdf(
         c.setFont("Helvetica", 12)
         c.drawString(title_x, page_h - margin - 62, str(show.get("title") or ""))
 
-        # Rules
         c.setFont("Helvetica-Bold", 14)
         c.drawString(margin, page_h - margin - 105, "VOTING RULES")
+
         c.setFont("Helvetica", 12)
         rules = [
-            "• All votes are $1 each — you choose how many votes you want.",
-            "• Branch Awards: Only veterans, active military, or in memory of a veteran should vote for branches.",
+            "• All votes are paid votes. Scan the code and choose quantity.",
+            "• Branch Awards: Only veterans, active military, or in memory of a veteran should vote by branch.",
             "• People’s Choice: Everyone can vote.",
         ]
         y = page_h - margin - 125
@@ -155,7 +159,6 @@ def build_landscape_cards_pdf(
             c.drawString(margin, y, line)
             y -= 16
 
-        # Sponsors strip (Title big + others small). Draw ONLY logos that exist.
         sponsor_y = page_h - margin - 1.95 * inch
         sponsor_h = 1.05 * inch
         sponsor_w = page_w - 2 * margin
@@ -165,7 +168,6 @@ def build_landscape_cards_pdf(
         if title_logo:
             draw_image_contain(c, title_logo, margin, sponsor_y, left_w, sponsor_h)
 
-        # Standard sponsors grid (3x2) in right area
         cols, rows = 3, 2
         cell_w = right_w / cols
         cell_h = sponsor_h / rows
@@ -176,14 +178,13 @@ def build_landscape_cards_pdf(
             y0 = sponsor_y + (rows - 1 - row) * cell_h
             draw_image_contain(c, img, x0, y0, cell_w, cell_h)
 
-        # QR grid
         grid_x = margin
         grid_y = margin + 1.35 * inch
         grid_w = page_w - 2 * margin
         grid_h = 3.55 * inch
 
         c.setFont("Helvetica-Bold", 14)
-        c.drawString(grid_x, grid_y + grid_h + 10, "SCAN TO VOTE ($1 per vote)")
+        c.drawString(grid_x, grid_y + grid_h + 10, "SCAN TO VOTE")
 
         cols, rows = 4, 2
         pad = 10
@@ -206,7 +207,6 @@ def build_landscape_cards_pdf(
             c.setFont("Helvetica", 11)
             c.drawCentredString(x0 + cell_w / 2, y0 + 4, label)
 
-        # Owner write-in section (NO phone/email)
         c.setFont("Helvetica-Bold", 13)
         c.drawString(margin, margin + 0.80 * inch, "OWNER / VEHICLE INFO (Write in)")
         c.setFont("Helvetica", 12)
@@ -219,28 +219,59 @@ def build_landscape_cards_pdf(
 
         c.showPage()
 
-        # Optional back page (owner check-in) — mirrored by default for duplex
+        # ----------------------------
+        # BACK PAGE
+        # ----------------------------
         if include_back:
             if mirror_back_pages:
                 c.saveState()
                 c.translate(page_w, 0)
                 c.scale(-1, 1)
 
-            c.setFont("Helvetica-Bold", 26)
-            c.drawString(margin, page_h - margin - 40, f"OWNER CHECK-IN — CAR #{car_number}")
+            c.setFont("Helvetica-Bold", 24)
+            c.drawString(margin, page_h - margin - 40, f"OWNER REGISTRATION — CAR #{car_number}")
+
             c.setFont("Helvetica", 12)
-            c.drawString(margin, page_h - margin - 62, "Scan to confirm/update your registration info")
+            c.drawString(
+                margin,
+                page_h - margin - 62,
+                "Scan to claim this car number, enter your info, sign the waiver, and complete registration.",
+            )
 
-            checkin_url = f"{base_url.rstrip('/')}/checkin/{show['slug']}/{car_token}"
-            qr_back = make_qr(checkin_url, box_size=12, border=2)
+            claim_url = f"{base_url.rstrip('/')}/claim/{show['slug']}/{car_token}"
+            qr_back = make_qr(claim_url, box_size=12, border=2)
 
-            qr_size = 4.5 * inch
+            qr_size = 4.25 * inch
             qx = (page_w - qr_size) / 2
-            qy = (page_h - qr_size) / 2 - 0.25 * inch
+            qy = (page_h - qr_size) / 2 - 0.10 * inch
             draw_image_contain(c, qr_back, qx, qy, qr_size, qr_size)
 
-            c.setFont("Helvetica-Oblique", 10)
-            c.drawCentredString(page_w / 2, qy - 16, checkin_url)
+            info_y = qy - 18
+            c.setFont("Helvetica-Bold", 11)
+            c.drawCentredString(page_w / 2, info_y, "SCAN TO REGISTER THIS CAR")
+
+            c.setFont("Helvetica", 10)
+            c.drawCentredString(
+                page_w / 2,
+                info_y - 15,
+                "Includes vehicle info, contact info, future event opt-in, sponsor opt-in, and electronic waiver signature.",
+            )
+
+            c.setFont("Helvetica-Oblique", 9)
+            c.drawCentredString(page_w / 2, info_y - 31, claim_url)
+
+            footer_y = margin + 0.35 * inch
+            c.setFont("Helvetica", 10)
+            c.drawString(
+                margin,
+                footer_y + 18,
+                "By opting in, you agree Karman Kar Shows & Events may contact you about this event and future events.",
+            )
+            c.drawString(
+                margin,
+                footer_y + 4,
+                "If selected, sponsor information may also be sent. Msg/data rates may apply. Opt out anytime.",
+            )
 
             if mirror_back_pages:
                 c.restoreState()

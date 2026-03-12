@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% set title = "Register Your Car • " + show['title'] %}
+
+{% block content %}
+
+<div class="max-w-3xl mx-auto">
+
+  <div class="text-center mb-8">
+    <h1 class="text-3xl font-semibold tracking-tight">
+      Car #{{ car['car_number'] }} Registration
+    </h1>
+
+    <p class="mt-2 text-slate-600">
+      Complete your registration for the show below.
+      Your car number is already reserved.
+    </p>
+  </div>
+
+  <form method="POST" action="{{ url_for('placeholder_claim_submit', show_slug=show['slug'], car_token=car['car_token']) }}" class="space-y-6">
+
+    <!-- OWNER INFO -->
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+
+      <h2 class="text-lg font-semibold mb-4">
+        Owner information
+      </h2>
+
+      <div class="grid gap-4 md:grid-cols-2">
+
+        <div>
+          <label class="text-sm font-semibold">Full name</label>
+          <input
+            required
+            name="owner_name"
+            class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold">Phone</label>
+          <input
+            required
+            name="phone"
+            class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="text-sm font-semibold">Email</label>
+          <input
+            required
+            type="email"
+            name="email"
+            class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- VEHICLE INFO -->
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+
+      <h2 class="text-lg font-semibold mb-4">
+        Vehicle information
+      </h2>
+
+      <div class="grid gap-4 md:grid-cols-3">
+
+        <div>
+          <label class="text-sm font-semibold">Year</label>
+          <input
+            required
+            name="year"
+            class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold">Make</label>
+          <input
+            required
+            name="make"
+            class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+
+        <div>
+          <label class="text-sm font-semibold">Model</label>
+          <input
+            required
+            name="model"
+            class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+
+      </div>
+
+      <div class="mt-4 text-sm text-slate-600">
+        Car number assigned: <strong>#{{ car['car_number'] }}</strong>
+      </div>
+
+    </div>
+
+
+    <!-- CONTACT CONSENT -->
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+
+      <h2 class="text-lg font-semibold mb-4">
+        Communication preferences
+      </h2>
+
+      <div class="space-y-3">
+
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="opt_in_future"
+            value="1"
+            class="mt-1">
+          <span class="text-sm text-slate-700">
+            Yes — notify me about future car shows and events.
+          </span>
+        </label>
+
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="sponsor_opt_in"
+            value="1"
+            class="mt-1">
+          <span class="text-sm text-slate-700">
+            I agree that event sponsors may contact me with relevant offers.
+          </span>
+        </label>
+
+      </div>
+
+      <div class="mt-4 text-xs text-slate-500 leading-relaxed">
+        By submitting this form you agree Karman Kar Shows & Events may contact you
+        about this event and future events if selected. If you opt-in above,
+        participating sponsors may also contact you. Message and data rates may apply.
+        You may opt out at any time.
+      </div>
+
+    </div>
+
+
+    <!-- WAIVER -->
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+
+      <h2 class="text-lg font-semibold mb-4">
+        Event waiver
+      </h2>
+
+      <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 text-sm leading-relaxed max-h-48 overflow-y-auto">
+        {{ show["waiver_text"] | safe }}
+      </div>
+
+      <div class="mt-4">
+
+        <label class="text-sm font-semibold">
+          Electronic signature
+        </label>
+
+        <input
+          required
+          name="waiver_signed_name"
+          placeholder="Type your full name"
+          class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+
+        <label class="flex items-start gap-3 mt-3">
+          <input
+            required
+            type="checkbox"
+            name="waiver_accept"
+            value="1"
+            class="mt-1">
+
+          <span class="text-sm text-slate-700">
+            I agree to the event waiver above and understand this electronic signature
+            is legally binding.
+          </span>
+        </label>
+
+      </div>
+
+    </div>
+
+
+    <!-- PAYMENT -->
+
+    {% if show["registration_fee_cents"] > 0 %}
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm text-center">
+
+      <div class="text-slate-600 text-sm">
+        Registration fee
+      </div>
+
+      <div class="text-3xl font-semibold mt-1">
+        ${{ "%.2f"|format(show["registration_fee_cents"] / 100) }}
+      </div>
+
+      <p class="mt-2 text-sm text-slate-600">
+        Your registration will be finalized after payment.
+      </p>
+
+    </div>
+
+    {% endif %}
+
+
+    <!-- SUBMIT -->
+
+    <div class="text-center pt-4">
+
+      <button
+        class="btn btn-primary text-lg px-8 py-4"
+        type="submit">
+
+        Complete Registration
+
+      </button>
+
+    </div>
+
+  </form>
+
+</div>
+
+{% endblock %}
