@@ -193,13 +193,16 @@ def build_landscape_cards_pdf(
             standard_imgs.append(img)
 
     # fallback if old data still uses title_sponsor slot as the hero logo
-    if not presenting_imgs and title_sponsor:
+    if not presenting_imgs:
+
+    if title_sponsor:
         fallback_img = sponsor_logo_img(dict(title_sponsor))
         if fallback_img:
             presenting_imgs = [fallback_img]
-            if title_imgs:
-                title_imgs = title_imgs[1:] if len(title_imgs) > 0 else []
 
+if not presenting_imgs and sponsor_with_imgs:
+    presenting_imgs = [sponsor_with_imgs[0][1]]
+    
     margin = 0.50 * inch
 
     for r in cars_rows:
@@ -227,17 +230,18 @@ def build_landscape_cards_pdf(
             draw_image_contain(c, brand_logo, margin + 8, header_y + 10, 1.40 * inch, header_h - 20)
 
         if presenting_imgs:
-            c.setFont("Helvetica-Bold", 11)
-            c.drawCentredString(page_w / 2, page_h - margin - 14, "PRESENTED BY")
-            draw_image_contain(
-                c,
-                presenting_imgs[0],
-                (page_w / 2) - 1.75 * inch,
-                header_y + 0.42 * inch,
-                3.50 * inch,
-                0.62 * inch,
-            )
 
+    c.setFont("Helvetica-Bold", 11)
+    c.drawCentredString(page_w / 2, page_h - margin - 12, "PRESENTED BY")
+
+    draw_image_contain(
+        c,
+        presenting_imgs[0],
+        (page_w / 2) - 1.95 * inch,
+        header_y + 0.36 * inch,
+        3.90 * inch,
+        0.72 * inch,
+    )
         c.setFont("Helvetica-Bold", 24)
         c.drawRightString(page_w - margin - 10, header_y + 0.78 * inch, f"CAR #{car_number}")
         c.setFont("Helvetica-Bold", 12)
@@ -283,20 +287,24 @@ def build_landscape_cards_pdf(
             yy -= 14
 
         c.setFont("Helvetica-Bold", 11)
-        c.drawString(margin + 10, body_y + 62, "Branch awards")
-        c.setFont("Helvetica", 9)
-        branch_lines = [
-            "Army, Navy, Air Force, Marines,",
-            "Coast Guard, and Space Force are for",
-            "veterans, active military, or in",
-            "memory of a veteran.",
-            "People's Choice is open to everyone.",
-        ]
-        yy = body_y + 46
-        for line in branch_lines:
-            c.drawString(margin + 12, yy, line)
-            yy -= 12
+c.drawString(margin + 10, body_y + 84, "Branch awards")
 
+c.setFont("Helvetica", 8.5)
+
+branch_lines = [
+    "Army, Navy, Air Force, Marines,",
+    "Coast Guard, and Space Force are for",
+    "veterans, active military, or",
+    "in memory of a veteran.",
+    "People's Choice is open to everyone.",
+]
+
+yy = body_y + 68
+
+for line in branch_lines:
+    c.drawString(margin + 12, yy, line)
+    yy -= 10
+    
         # Right QR panel
         qr_x = margin + left_w + gap
         qr_y = body_y
@@ -361,7 +369,7 @@ def build_landscape_cards_pdf(
                 c.drawCentredString(x0 + cell_w / 2, y0 + cell_h - 102, "vehicle")
 
         # Front sponsor bands: Title + Gold only
-        sponsor_band_h = 1.35 * inch
+        sponsor_band_h = 1.55 * inch
         sponsor_band_y = margin
         draw_box(margin, sponsor_band_y, page_w - 2 * margin, sponsor_band_h, lw=1.0)
 
@@ -375,9 +383,9 @@ def build_landscape_cards_pdf(
             draw_logo_row(
                 title_imgs,
                 margin + 10,
-                sponsor_band_y + 0.28 * inch,
+                sponsor_band_y + 0.34 * inch,
                 left_band_w - 20,
-                0.48 * inch,
+                0.62 * inch,
                 max_items=2,
             )
 
@@ -388,9 +396,9 @@ def build_landscape_cards_pdf(
             draw_logo_row(
                 gold_imgs,
                 margin + left_band_w + 18,
-                sponsor_band_y + 0.22 * inch,
+                sponsor_band_y + 0.28 * inch,
                 right_band_w - 20,
-                0.54 * inch,
+                0.64 * inch,
                 max_items=4,
             )
 
@@ -410,16 +418,18 @@ def build_landscape_cards_pdf(
             draw_box(margin, back_header_y, page_w - 2 * margin, back_header_h, lw=1.2)
 
             if presenting_imgs:
-                c.setFont("Helvetica-Bold", 11)
-                c.drawCentredString(page_w / 2, page_h - margin - 12, "PRESENTED BY")
-                draw_image_contain(
-                    c,
-                    presenting_imgs[0],
-                    (page_w / 2) - 1.65 * inch,
-                    back_header_y + 0.20 * inch,
-                    3.30 * inch,
-                    0.44 * inch,
-                )
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawCentredString(page_w / 2, page_h - margin - 10, "PRESENTED BY")
+
+    draw_image_contain(
+        c,
+        presenting_imgs[0],
+        (page_w / 2) - 1.85 * inch,
+        back_header_y + 0.14 * inch,
+        3.70 * inch,
+        0.50 * inch,
+    )
 
             c.setFont("Helvetica-Bold", 24)
             c.drawRightString(page_w - margin - 10, back_header_y + 0.58 * inch, f"REGISTER THIS CAR")
