@@ -1,3 +1,31 @@
+Here is the **complete replacement** for `templates/register.html` that matches the **new paid registration + electronic waiver + charity-owned checkout** flow.
+
+This version adds:
+
+* sponsor info opt-in
+* registration fee display
+* waiver acceptance
+* typed signature
+* posts into the **new registration checkout flow**
+* keeps capacity and disclosure display
+* keeps opt-in phone requirement logic
+* validates waiver before submit in the browser
+
+It will compile as Jinja.
+
+It assumes the upcoming new `app.py` will:
+
+* keep the route name `register_page`
+* keep the POST route name `register_submit`
+* accept these new form fields:
+
+  * `sponsor_opt_in`
+  * `waiver_accepted`
+  * `waiver_signed_name`
+
+---
+
+```html
 {% extends "base.html" %}
 {% set title = "Register • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
 
@@ -5,8 +33,48 @@
 <div class="max-w-3xl mx-auto">
   <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-7">
     <h1 class="text-3xl font-semibold tracking-tight">Register your car</h1>
+
     {% if show %}
       <div class="mt-1 text-slate-600">{{ show["title"] }}</div>
+
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Event</div>
+          <div class="mt-1 text-sm text-slate-800">
+            {% if show["date"] %}<div>{{ show["date"] }}</div>{% endif %}
+            {% if show["time"] %}<div>{{ show["time"] }}</div>{% endif %}
+            {% if show["location_name"] %}<div>{{ show["location_name"] }}</div>{% endif %}
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Capacity</div>
+          <div class="mt-1 text-sm text-slate-800">
+            <div>
+              <span class="font-semibold">{{ registered_cars }}</span> registered
+              {% if show["max_cars"] %}
+                of <span class="font-semibold">{{ show["max_cars"] }}</span>
+              {% else %}
+                <span class="text-slate-500">• No max set</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Registration Fee</div>
+        <div class="mt-1 text-sm text-slate-800">
+          ${{ '%.2f'|format((show["registration_fee_cents"] or 0) / 100) }}
+        </div>
+      </div>
+
+      {% if show["public_registration_disclosure"] %}
+        <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div class="text-xs font-semibold uppercase tracking-wide text-amber-800">Registration Disclosure</div>
+          <div class="mt-1 text-sm text-amber-900 whitespace-pre-line">{{ show["public_registration_disclosure"] }}</div>
+        </div>
+      {% endif %}
     {% endif %}
 
     {% if error %}
@@ -15,11 +83,15 @@
       </div>
     {% endif %}
 
-    <form class="mt-6 grid gap-4" method="post" action="{{ url_for('register_submit') }}">
+    <form id="registerForm" class="mt-6 grid gap-4" method="post" action="{{ url_for('register_submit') }}">
       <div class="grid gap-2">
         <label class="text-sm font-semibold text-slate-800" for="name">Full name *</label>
         <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
-               id="name" name="name" autocomplete="name" required />
+               id="name"
+               name="name"
+               autocomplete="name"
+               value="{{ request.form.get('name', '') if request and request.form else '' }}"
+               required />
       </div>
 
       <div class="grid gap-2">
@@ -27,7 +99,11 @@
           Phone <span id="phoneRequiredHint" class="text-slate-500 font-normal">(required if you opt in)</span>
         </label>
         <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
-               id="phone" name="phone" inputmode="tel" autocomplete="tel" />
+               id="phone"
+               name="phone"
+               inputmode="tel"
+               autocomplete="tel"
+               value="{{ request.form.get('phone', '') if request and request.form else '' }}" />
         <div id="phoneHelp" class="text-xs text-slate-500">
           Used for event updates only if you choose to receive them.
         </div>
@@ -36,22 +112,48 @@
       <div class="grid gap-2">
         <label class="text-sm font-semibold text-slate-800" for="email">Email (optional)</label>
         <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
-               id="email" name="email" type="email" autocomplete="email" />
+               id="email"
+               name="email"
+               type="email"
+               autocomplete="email"
+               value="{{ request.form.get('email', '') if request and request.form else '' }}" />
       </div>
 
-      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <label class="flex items-start gap-3 cursor-pointer">
-          <input id="opt_in_future" name="opt_in_future" type="checkbox" class="mt-1" />
-          <span class="text-sm text-slate-800">
-            I’d like to receive event updates and future show info.
-            <span class="block mt-1 text-xs text-slate-500">
-              Msg/data rates may apply. Opt out anytime.
+      <div class="grid gap-3">
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input id="opt_in_future"
+                   name="opt_in_future"
+                   type="checkbox"
+                   class="mt-1"
+                   {% if request and request.form and request.form.get('opt_in_future') %}checked{% endif %} />
+            <span class="text-sm text-slate-800">
+              I’d like to receive event updates and future show info.
+              <span class="block mt-1 text-xs text-slate-500">
+                Msg/data rates may apply. Opt out anytime.
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
 
-        <div id="optinWarning" class="hidden mt-3 text-xs text-amber-800 border border-amber-200 bg-amber-50 rounded-xl p-3">
-          Phone is required when opting in to updates.
+          <div id="optinWarning" class="hidden mt-3 text-xs text-amber-800 border border-amber-200 bg-amber-50 rounded-xl p-3">
+            Phone is required when opting in to updates.
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input id="sponsor_opt_in"
+                   name="sponsor_opt_in"
+                   type="checkbox"
+                   class="mt-1"
+                   {% if request and request.form and request.form.get('sponsor_opt_in') %}checked{% endif %} />
+            <span class="text-sm text-slate-800">
+              I’d like information from event sponsors.
+              <span class="block mt-1 text-xs text-slate-500">
+                Sponsor contact information may be sent only if you choose this option.
+              </span>
+            </span>
+          </label>
         </div>
       </div>
 
@@ -59,31 +161,93 @@
         <div class="grid gap-2">
           <label class="text-sm font-semibold text-slate-800" for="car_number">Car number *</label>
           <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
-                 id="car_number" name="car_number" inputmode="numeric" required />
+                 id="car_number"
+                 name="car_number"
+                 inputmode="numeric"
+                 value="{{ request.form.get('car_number', '') if request and request.form else '' }}"
+                 required />
         </div>
 
         <div class="grid gap-2">
           <label class="text-sm font-semibold text-slate-800" for="year">Year *</label>
           <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
-                 id="year" name="year" inputmode="numeric" required />
+                 id="year"
+                 name="year"
+                 inputmode="numeric"
+                 value="{{ request.form.get('year', '') if request and request.form else '' }}"
+                 required />
         </div>
 
         <div class="grid gap-2">
           <label class="text-sm font-semibold text-slate-800" for="make">Make *</label>
           <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
-                 id="make" name="make" required />
+                 id="make"
+                 name="make"
+                 value="{{ request.form.get('make', '') if request and request.form else '' }}"
+                 required />
         </div>
 
         <div class="grid gap-2">
           <label class="text-sm font-semibold text-slate-800" for="model">Model *</label>
           <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
-                 id="model" name="model" required />
+                 id="model"
+                 name="model"
+                 value="{{ request.form.get('model', '') if request and request.form else '' }}"
+                 required />
+        </div>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-sm font-semibold text-slate-900">Electronic Waiver</div>
+
+        {% if show and show["waiver_text"] %}
+          <div class="mt-3 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 whitespace-pre-line">
+            {{ show["waiver_text"] }}
+          </div>
+        {% else %}
+          <div class="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            No waiver text has been configured for this show yet.
+          </div>
+        {% endif %}
+
+        <div class="mt-4 grid gap-4">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input id="waiver_accepted"
+                   name="waiver_accepted"
+                   type="checkbox"
+                   class="mt-1"
+                   {% if request and request.form and request.form.get('waiver_accepted') %}checked{% endif %} />
+            <span class="text-sm text-slate-800">
+              I have read and agree to the waiver above. *
+            </span>
+          </label>
+
+          <div class="grid gap-2">
+            <label class="text-sm font-semibold text-slate-800" for="waiver_signed_name">
+              Type your full name as electronic signature *
+            </label>
+            <input class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+                   id="waiver_signed_name"
+                   name="waiver_signed_name"
+                   autocomplete="name"
+                   value="{{ request.form.get('waiver_signed_name', '') if request and request.form else '' }}"
+                   required />
+            {% if show and show["waiver_version"] %}
+              <div class="text-xs text-slate-500">
+                Waiver version: {{ show["waiver_version"] }}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div id="waiverWarning" class="hidden mt-4 text-xs text-red-800 border border-red-200 bg-red-50 rounded-xl p-3">
+          You must accept the waiver and type your full name to continue.
         </div>
       </div>
 
       <div class="mt-2 flex flex-wrap gap-3">
         <button class="px-6 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90" type="submit">
-          Complete registration
+          Continue to payment
         </button>
 
         {% if show %}
@@ -100,27 +264,71 @@
 <script>
   (function () {
     const optIn = document.getElementById("opt_in_future");
+    const sponsorOptIn = document.getElementById("sponsor_opt_in");
     const phone = document.getElementById("phone");
     const warn = document.getElementById("optinWarning");
     const hint = document.getElementById("phoneRequiredHint");
 
-    function sync() {
-      const needsPhone = !!optIn.checked;
+    const form = document.getElementById("registerForm");
+    const waiverAccepted = document.getElementById("waiver_accepted");
+    const waiverSignedName = document.getElementById("waiver_signed_name");
+    const waiverWarning = document.getElementById("waiverWarning");
+
+    function syncPhoneRequirement() {
+      const needsPhone = !!(optIn && optIn.checked) || !!(sponsorOptIn && sponsorOptIn.checked);
       phone.required = needsPhone;
 
       if (needsPhone) {
         warn.classList.remove("hidden");
-        hint.textContent = "(required)";
+        hint.textContent = "(required if you opt in)";
       } else {
         warn.classList.add("hidden");
         hint.textContent = "(required if you opt in)";
       }
     }
 
-    if (optIn && phone) {
-      optIn.addEventListener("change", sync);
-      sync();
+    function validateWaiver() {
+      const accepted = waiverAccepted && waiverAccepted.checked;
+      const signed = waiverSignedName && waiverSignedName.value.trim().length > 0;
+
+      if (!accepted || !signed) {
+        waiverWarning.classList.remove("hidden");
+        return false;
+      }
+
+      waiverWarning.classList.add("hidden");
+      return true;
     }
+
+    if (optIn) optIn.addEventListener("change", syncPhoneRequirement);
+    if (sponsorOptIn) sponsorOptIn.addEventListener("change", syncPhoneRequirement);
+    if (waiverAccepted) waiverAccepted.addEventListener("change", validateWaiver);
+    if (waiverSignedName) waiverSignedName.addEventListener("input", validateWaiver);
+
+    if (form) {
+      form.addEventListener("submit", function (e) {
+        syncPhoneRequirement();
+        if (!validateWaiver()) {
+          e.preventDefault();
+          waiverSignedName.focus();
+        }
+      });
+    }
+
+    syncPhoneRequirement();
+    validateWaiver();
   })();
 </script>
 {% endblock %}
+```
+
+## Important compile note
+
+# This template is meant for the **new app.py** and **new database.py** together.
+
+# Your current `register.html` only supports direct registration with no payment and no electronic waiver capture. This replacement is designed for the next backend step where:
+
+# * the form creates a **registration intent**
+# * then redirects to **charity-owned checkout**
+# * then webhook finalizes the actual car registration
+

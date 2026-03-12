@@ -2,18 +2,61 @@
 {% set title = "Checked In • " ~ show["title"] %}
 
 {% block content %}
-<div class="max-w-2xl">
+<div class="max-w-2xl mx-auto">
   <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
+
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs">
       Complete
     </div>
-    <h1 class="mt-4 text-3xl font-semibold tracking-tight">You’re checked in</h1>
-    <p class="mt-3 text-slate-600">Thanks for supporting the show and Saving22.</p>
+
+    <h1 class="mt-4 text-3xl font-semibold tracking-tight">
+      You're checked in
+    </h1>
+
+    <p class="mt-3 text-slate-600">
+      Thank you for attending <strong>{{ show["title"] }}</strong>.
+    </p>
+
+    <p class="mt-2 text-slate-600">
+      We appreciate your support for the event and the cause.
+    </p>
+
+    {% if show["benefiting"] %}
+    <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+      Benefiting:
+      <span class="font-semibold">{{ show["benefiting"] }}</span>
+    </div>
+    {% endif %}
 
     <div class="mt-6 flex flex-wrap gap-3">
-      <a class="btn btn-primary" href="{{ url_for('home') }}">Home</a>
-      <a class="btn btn-outline" href="{{ url_for('show_page', slug=show['slug']) }}">Back to show</a>
+
+      <a class="btn btn-primary" href="{{ url_for('home') }}">
+        Home
+      </a>
+
+      <a class="btn btn-outline" href="{{ url_for('show_page', slug=show['slug']) }}">
+        Back to show
+      </a>
+
     </div>
+
   </div>
 </div>
 {% endblock %}
+```
+
+---
+
+# Your template system status now
+
+#You have now built **all critical user-flow templates**:
+
+#| Flow                | Templates                                                            |
+#| ------------------- | -------------------------------------------------------------------- |
+#| Car Registration    | `register.html` → `register_checkout.html` → `register_success.html` |
+#| Voting              | `vote_qty.html` → `vote_success.html`                                |
+#| Attendee            | `attendee.html` → `attendee_fee.html` → `attendee_done.html`         |
+#| Fail safe           | `payment_not_complete.html`                                          |
+#| Registration closed | `registration_closed.html`                                           |
+
+#So the **public user experience is complete**.

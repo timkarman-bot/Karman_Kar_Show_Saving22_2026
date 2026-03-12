@@ -1,0 +1,125 @@
+# templates/attendee_fee.html
+
+
+{% extends "base.html" %}
+
+{% block title %}Attendance Fee – {{ show.title }}{% endblock %}
+
+{% block content %}
+
+<div class="container" style="max-width:700px;margin:auto">
+
+<h1>Event Attendance</h1>
+
+<p>
+Thank you for attending <strong>{{ show.title }}</strong>.
+</p>
+
+<p>
+An attendance fee helps support the charity benefiting from this event.
+</p>
+
+{% if show.attendee_fee_cents and show.attendee_fee_cents > 0 %}
+<p>
+Suggested attendance fee:
+<strong>${{ "%.2f"|format(show.attendee_fee_cents / 100) }}</strong>
+</p>
+{% endif %}
+
+<hr>
+
+<form id="feeForm">
+
+<input type="hidden" name="show_slug" value="{{ show.slug }}">
+<input type="hidden" name="attendee_id" value="{{ attendee_id }}">
+
+<label for="amount">Attendance Fee Amount (USD)</label>
+
+<input
+    type="number"
+    step="0.01"
+    min="0"
+    id="amount"
+    name="amount_dollars"
+    value="{{ "%.2f"|format(show.attendee_fee_cents / 100) if show.attendee_fee_cents else '0.00' }}"
+    style="width:150px"
+/>
+
+<br><br>
+
+<button type="submit" class="btn btn-primary">
+Pay Attendance Fee
+</button>
+
+<button
+    type="button"
+    class="btn btn-secondary"
+    onclick="skipFee()"
+>
+Skip
+</button>
+
+</form>
+
+<div id="status" style="margin-top:20px;"></div>
+
+</div>
+
+<script>
+
+document.getElementById("feeForm").addEventListener("submit", async function(e) {
+
+    e.preventDefault()
+
+    const form = new FormData(this)
+
+    const status = document.getElementById("status")
+    status.innerHTML = "Creating checkout..."
+
+    const response = await fetch("/attend/create-fee-checkout", {
+        method: "POST",
+        body: form
+    })
+
+    const data = await response.json()
+
+    if(!data.ok)
+    {
+        status.innerHTML = data.error || "Something went wrong."
+        return
+    }
+
+    if(data.skipped)
+    {
+        window.location = data.redirect_url
+        return
+    }
+
+    window.location = data.checkout_url
+
+})
+
+function skipFee()
+{
+    const form = new FormData()
+
+    form.append("show_slug","{{ show.slug }}")
+    form.append("attendee_id","{{ attendee_id }}")
+    form.append("amount_dollars","0")
+
+    fetch("/attend/create-fee-checkout",{
+        method:"POST",
+        body:form
+    })
+    .then(r=>r.json())
+    .then(data=>{
+        if(data.redirect_url)
+        {
+            window.location = data.redirect_url
+        }
+    })
+}
+
+</script>
+
+{% endblock %}

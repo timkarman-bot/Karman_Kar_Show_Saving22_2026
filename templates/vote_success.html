@@ -2,18 +2,38 @@
 {% set title = "Thank You • Karman Kar Shows & Events" %}
 
 {% block content %}
-<div class="max-w-2xl">
+<div class="max-w-2xl mx-auto">
   <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs">
       Success
     </div>
+
     <h1 class="mt-4 text-3xl font-semibold tracking-tight">Votes recorded</h1>
-    <p class="mt-3 text-slate-600">Thanks for supporting the show and the cause.</p>
+
+    <p class="mt-3 text-slate-600">
+      Thank you for supporting the show and the cause.
+    </p>
+
+    {% if active_show and active_show["public_vote_disclosure"] %}
+      <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Payment Notice
+        </div>
+        <div class="mt-1 text-sm text-slate-700 whitespace-pre-line">
+          {{ active_show["public_vote_disclosure"] }}
+        </div>
+      </div>
+    {% endif %}
 
     <div class="mt-6 flex flex-wrap gap-3">
-      <a class="btn btn-primary" href="{{ url_for('home') }}">Home</a>
+      <a class="btn btn-primary" href="{{ url_for('home') }}">
+        Home
+      </a>
+
       {% if active_show %}
-        <a class="btn btn-outline" href="{{ url_for('show_page', slug=active_show['slug']) }}">Back to show</a>
+        <a class="btn btn-outline" href="{{ url_for('show_page', slug=active_show['slug']) }}">
+          Back to show
+        </a>
       {% endif %}
     </div>
   </div>

@@ -1,13 +1,52 @@
-# app.py 03/03/2026 12:39 (regenerated clean)
-# Karman Kar Shows & Events — Car show registration + QR voting + admin controls
+#Here is the **complete replacement `app.py`** that matches the new `database.py` and the new templates we have been building toward.
+
+#It is designed to compile with:
+
+#* the **new `database.py`**
+#* the new `admin.html`
+#* the new `register.html`
+#* the new `register_checkout.html`
+#* the new `register_success.html`
+#* the updated `vote_qty.html`
+
+#It also supports:
+
+#* **charity-owned Stripe Connect**
+#* **webhook confirmation**
+#* **registration checkout**
+#* **voting checkout**
+#* **attendance fee checkout**
+#* **electronic waiver capture**
+#* **admin pricing**
+#* **charity connect / disconnect routes**
+
+#A few honest notes before the file:
+
+#1. This will compile as Python if your `database.py` matches the version I gave you.
+#2. It assumes you will have an `attendee_fee.html` template after you rename/update that file.
+#3. It keeps a few compatibility routes so older links do not instantly break.
+#4. For Stripe Connect, set these environment variables:
+
+#   * `PLATFORM_STRIPE_SECRET_KEY`
+#   * `STRIPE_WEBHOOK_SECRET`
+#   * `STRIPE_CLIENT_ID`
+#   * `BASE_URL`
+#   * `FLASK_SECRET`
+#   * `ADMIN_PASSWORD`
+
+python
+# app.py
+# Karman Kar Shows & Events — charity-owned Stripe Connect checkout + webhook confirmation
 # 4-space indentation only (no tabs)
 
 import os
 import io
 import csv
-from typing import Dict
+import secrets
+from typing import Dict, Optional
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from urllib.parse import urlencode
 
 import stripe
 from flask import (
@@ -30,11 +69,15 @@ from database import (
     ensure_default_show,
     build_snapshot_zip_bytes,
     get_active_show,
+    get_show_by_id,
     get_show_by_slug,
     toggle_show_voting,
     set_show_voting_open,
-    update_show_registration_settings,
-    # registration / checkin
+    update_show_admin_settings,
+    set_show_charity_connect,
+    clear_show_charity_connect,
+    count_registered_cars,
+    show_has_capacity,
     create_person,
     update_person,
     create_show_car,
@@ -42,29 +85,37 @@ from database import (
     get_show_car_public_by_token,
     get_show_car_private_by_token,
     get_show_car_by_number,
-    # voting
+    create_registration_intent,
+    get_registration_intent_by_token,
+    get_registration_intent_by_session,
+    attach_stripe_session_to_registration_intent,
+    finalize_registration_intent_paid,
+    create_vote_intent,
+    get_vote_intent_by_session,
+    attach_stripe_session_to_vote_intent,
+    finalize_vote_intent_paid,
     record_paid_votes,
     reset_votes_for_show,
     export_votes_for_show,
     leaderboard_by_category,
     leaderboard_overall,
-    # placeholder cars (pre-print)
     create_placeholder_cars,
     list_show_cars_public,
-    # sponsors
     get_show_sponsors,
     upsert_sponsor,
     attach_sponsor_to_show,
     remove_sponsor_from_show,
     set_title_sponsor,
-    # attendee capture + donation
     create_attendee,
     record_field_metric,
     create_donation_row,
+    get_donation_by_id,
+    get_donation_by_session,
     attach_stripe_session_to_donation,
     mark_donation_paid,
-    # waiver tracking
     waiver_mark_received,
+    has_processed_webhook_event,
+    mark_webhook_event_processed,
 )
 
 # ----------------------------
@@ -72,16 +123,19 @@ from database import (
 # ----------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", "dev-secret-change-me")
-
-# Railway / reverse-proxy friendly (fixes _external URLs and scheme)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
+BASE_URL = os.getenv("BASE_URL", "").strip()
 
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-BASE_URL = os.getenv("BASE_URL", "")  # e.g. https://<yourapp>.up.railway.app
+PLATFORM_STRIPE_SECRET_KEY = (
+    os.getenv("PLATFORM_STRIPE_SECRET_KEY", "").strip()
+    or os.getenv("STRIPE_SECRET_KEY", "").strip()
+)
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+STRIPE_CLIENT_ID = os.getenv("STRIPE_CLIENT_ID", "").strip()
 
-VOTE_PRICE_CENTS = 100  # $1 per vote
+stripe.api_key = PLATFORM_STRIPE_SECRET_KEY
 
 CATEGORY_SLUGS: Dict[str, str] = {
     "army": "Army",
@@ -123,9 +177,6 @@ UPCOMING_EVENTS = [
     },
 ]
 
-# ----------------------------
-# INIT DB + ENSURE DEFAULT SHOW
-# ----------------------------
 init_db()
 ensure_default_show(DEFAULT_SHOW)
 
@@ -136,15 +187,16 @@ CONSENT_TEXT_CAR_OWNER = (
     "By submitting this form, you agree Karman Kar Shows & Events may contact you about this event and future events "
     "if selected. Msg/data rates may apply. Opt out anytime."
 )
-CONSENT_VERSION = "2026-02-26"
+CONSENT_VERSION = "2026-03-11"
+
+ATTENDEE_CONSENT_TEXT = (
+    "By selecting these options, you agree Karman Kar Shows & Events may contact you about the event and, "
+    "if selected, share sponsor offers. Msg/data rates may apply. Opt out anytime."
+)
+ATTENDEE_CONSENT_VERSION = "2026-03-11"
 
 
 def prereg_allowed(show) -> bool:
-    """
-    Pre-registration allowed rule:
-      - if allow_prereg_override is 0/1, obey it
-      - else default: full => allowed, popup => not allowed
-    """
     if not show:
         return False
 
@@ -160,20 +212,66 @@ def prereg_allowed(show) -> bool:
     return st == "full"
 
 
-def _require_stripe() -> None:
-    if not stripe.api_key:
-        abort(500, "Stripe is not configured. Set STRIPE_SECRET_KEY in Railway variables.")
+def _require_platform_stripe() -> None:
+    if not PLATFORM_STRIPE_SECRET_KEY:
+        abort(500, "Stripe platform key is not configured. Set PLATFORM_STRIPE_SECRET_KEY.")
 
 
 def _abs_url(path: str) -> str:
-    """
-    Stripe requires absolute URLs.
-    Uses BASE_URL if set; else request.url_root.
-    'path' must start with '/'.
-    """
     if BASE_URL:
         return BASE_URL.rstrip("/") + path
     return request.url_root.rstrip("/") + path
+
+
+def _parse_dollars_to_cents(value: str, default_cents: int = 0) -> int:
+    try:
+        return max(0, int(round(float((value or "").strip()) * 100)))
+    except Exception:
+        return default_cents
+
+
+def _format_cents(cents: int) -> str:
+    return f"{(int(cents or 0) / 100):.2f}"
+
+
+def _connected_account_id(show) -> Optional[str]:
+    if not show:
+        return None
+    acct = (show["charity_stripe_account_id"] or "").strip() if "charity_stripe_account_id" in show.keys() else ""
+    status = (show["charity_connect_status"] or "").strip() if "charity_connect_status" in show.keys() else ""
+    if acct and status == "connected":
+        return acct
+    return None
+
+
+def _require_connected_account(show) -> str:
+    acct = _connected_account_id(show)
+    if not acct:
+        abort(500, "No charity Stripe account is connected for this show.")
+    return acct
+
+
+def _stripe_connect_redirect_uri() -> str:
+    return _abs_url(url_for("admin_connect_charity_stripe_callback"))
+
+
+def _build_connect_authorize_url(show_id: int, show_slug: str) -> str:
+    if not STRIPE_CLIENT_ID:
+        abort(500, "Stripe Connect client ID is not configured. Set STRIPE_CLIENT_ID.")
+
+    state_token = secrets.token_urlsafe(24)
+    session["stripe_connect_state"] = state_token
+    session["stripe_connect_show_id"] = int(show_id)
+    session["stripe_connect_show_slug"] = show_slug
+
+    params = {
+        "response_type": "code",
+        "client_id": STRIPE_CLIENT_ID,
+        "scope": "read_write",
+        "state": state_token,
+        "redirect_uri": _stripe_connect_redirect_uri(),
+    }
+    return "https://connect.stripe.com/oauth/authorize?" + urlencode(params)
 
 
 def require_admin(view_func):
@@ -182,15 +280,10 @@ def require_admin(view_func):
         if not session.get("admin_authed"):
             return redirect(url_for("admin_page", next=request.path))
         return view_func(*args, **kwargs)
-
     return wrapped
 
 
 def _maybe_auto_close_voting() -> None:
-    """
-    If VOTING_END is set and we've passed it (America/Chicago), automatically close voting.
-    Format: "YYYY-MM-DD HH:MM"
-    """
     end_raw = os.getenv("VOTING_END", "").strip()
     if not end_raw:
         return
@@ -220,9 +313,12 @@ def before_request():
 def inject_globals():
     show = get_active_show()
     title_sponsor, sponsors = (None, [])
+    registered_cars = 0
+
     if show:
         result = get_show_sponsors(int(show["id"])) or (None, [])
         title_sponsor, sponsors = result
+        registered_cars = count_registered_cars(int(show["id"]))
 
     return {
         "active_show": show,
@@ -232,6 +328,7 @@ def inject_globals():
         "sponsors": sponsors,
         "is_admin": session.get("admin_authed", False),
         "prereg_allowed": prereg_allowed,
+        "registered_cars": registered_cars,
     }
 
 
@@ -265,12 +362,13 @@ def show_page(slug: str):
     show = get_show_by_slug(slug)
     if not show:
         return render_template("show.html", show={"title": "Show Not Found"}, not_found=True)
+
     cars = list_show_cars_public(int(show["id"]))
     return render_template("show.html", show=show, cars=cars, not_found=False)
 
 
 # ----------------------------
-# REGISTRATION (direct registration)
+# REGISTRATION
 # ----------------------------
 @app.get("/register")
 def register_page():
@@ -280,6 +378,9 @@ def register_page():
 
     if not prereg_allowed(show):
         return render_template("registration_closed.html", show=show), 403
+
+    if not show_has_capacity(int(show["id"])):
+        return render_template("registration_closed.html", show=show, error="This show is full."), 403
 
     return render_template("register.html", show=show)
 
@@ -291,31 +392,48 @@ def register_submit():
         return "No active show configured.", 500
 
     if not prereg_allowed(show):
-        return jsonify({"ok": False, "error": "Pre-registration is not available for this show."}), 403
+        return render_template("registration_closed.html", show=show), 403
+
+    if not show_has_capacity(int(show["id"])):
+        return render_template(
+            "register.html",
+            show=show,
+            error="This show has reached its maximum number of cars.",
+        )
 
     name = request.form.get("name", "").strip()
     phone = request.form.get("phone", "").strip()
     email = request.form.get("email", "").strip()
     opt_in_future = request.form.get("opt_in_future", "") == "on"
+    sponsor_opt_in = request.form.get("sponsor_opt_in", "") == "on"
 
     car_number_raw = request.form.get("car_number", "").strip()
     year = request.form.get("year", "").strip()
     make = request.form.get("make", "").strip()
     model = request.form.get("model", "").strip()
 
-    if not (name and car_number_raw and year and make and model):
+    waiver_accepted = request.form.get("waiver_accepted", "") == "on"
+    waiver_signed_name = request.form.get("waiver_signed_name", "").strip()
+
+    if not (name and car_number_raw and year and make and model and waiver_signed_name):
         return render_template(
             "register.html",
             show=show,
             error="Please fill out all required fields.",
         )
 
-    # Phone required IF opting in (email stays optional)
-    if opt_in_future and not phone:
+    if (opt_in_future or sponsor_opt_in) and not phone:
         return render_template(
             "register.html",
             show=show,
-            error="Phone number is required if you choose to receive updates.",
+            error="Phone number is required if you opt in to updates or sponsor information.",
+        )
+
+    if not waiver_accepted:
+        return render_template(
+            "register.html",
+            show=show,
+            error="You must accept the waiver to continue.",
         )
 
     try:
@@ -329,30 +447,145 @@ def register_submit():
             error="Car number must be a positive number.",
         )
 
-    sponsor_opt_in = False  # car-owner form currently has no sponsor checkbox
-    person_id = create_person(
-        name=name,
-        phone=phone,
-        email=email,
-        opt_in_future=opt_in_future,
-        sponsor_opt_in=sponsor_opt_in,
-        consent_text=CONSENT_TEXT_CAR_OWNER,
-        consent_version=CONSENT_VERSION,
-    )
+    registration_fee_cents = int(show["registration_fee_cents"] or 0)
+    waiver_text = (show["waiver_text"] or "").strip()
+    waiver_version = (show["waiver_version"] or "").strip()
 
     try:
-        _, car_token = create_show_car(
+        registration_intent_id, intent_token = create_registration_intent(
             show_id=int(show["id"]),
-            person_id=person_id,
+            owner_name=name,
+            phone=phone,
+            email=email,
+            opt_in_future=opt_in_future,
+            sponsor_opt_in=sponsor_opt_in,
             car_number=car_number,
             year=year,
             make=make,
             model=model,
+            waiver_accepted=waiver_accepted,
+            waiver_signed_name=waiver_signed_name,
+            waiver_text=waiver_text,
+            waiver_version=waiver_version,
+            amount_cents=registration_fee_cents,
         )
     except ValueError as e:
         return render_template("register.html", show=show, error=str(e))
 
-    return redirect(url_for("registration_complete", show_slug=show["slug"], car_token=car_token))
+    # Free registration path
+    if registration_fee_cents <= 0:
+        synthetic_session_id = f"free_reg_{intent_token}"
+        attach_stripe_session_to_registration_intent(
+            registration_intent_id=registration_intent_id,
+            stripe_session_id=synthetic_session_id,
+            stripe_payment_intent_id="",
+        )
+        result = finalize_registration_intent_paid(synthetic_session_id)
+        car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
+        return render_template("register_success.html", show=show, car=car)
+
+    acct = _connected_account_id(show)
+    if not acct:
+        return render_template(
+            "register.html",
+            show=show,
+            error="This show does not have a charity payment account connected yet. Please contact the organizer.",
+        )
+
+    _require_platform_stripe()
+
+    success_url = (
+        _abs_url(url_for("registration_success", show_slug=show["slug"], intent_token=intent_token))
+        + "?session_id={CHECKOUT_SESSION_ID}"
+    )
+    cancel_url = _abs_url(url_for("register_page"))
+
+    session_obj = stripe.checkout.Session.create(
+        mode="payment",
+        payment_method_types=["card"],
+        line_items=[
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": registration_fee_cents,
+                    "product_data": {
+                        "name": f"Registration – {show['title']}",
+                    },
+                },
+                "quantity": 1,
+            }
+        ],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={
+            "payment_item_type": "registration",
+            "show_id": str(show["id"]),
+            "show_slug": show["slug"],
+            "registration_intent_id": str(registration_intent_id),
+            "intent_token": intent_token,
+        },
+        stripe_account=acct,
+    )
+
+    attach_stripe_session_to_registration_intent(
+        registration_intent_id=registration_intent_id,
+        stripe_session_id=session_obj.id,
+        stripe_payment_intent_id="",
+    )
+
+    car_summary = {
+        "year": year,
+        "make": make,
+        "model": model,
+    }
+
+    return render_template(
+        "register_checkout.html",
+        show=show,
+        car=car_summary,
+        car_number=car_number,
+        checkout_url=session_obj.url,
+    )
+
+
+@app.get("/register-success/<show_slug>/<intent_token>")
+def registration_success(show_slug: str, intent_token: str):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return "Show not found.", 404
+
+    ri = get_registration_intent_by_token(intent_token)
+    if not ri or int(ri["show_id"]) != int(show["id"]):
+        return "Registration not found.", 404
+
+    session_id = request.args.get("session_id", "").strip()
+
+    # If already finalized, render success directly
+    if ri["finalized_show_car_id"]:
+        result = finalize_registration_intent_paid(ri["stripe_session_id"])
+        car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
+        return render_template("register_success.html", show=show, car=car)
+
+    if not session_id:
+        return render_template("payment_not_complete.html")
+
+    acct = _connected_account_id(show)
+    if not acct:
+        return render_template("payment_not_complete.html")
+
+    _require_platform_stripe()
+
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id, stripe_account=acct)
+    except Exception:
+        return render_template("payment_not_complete.html")
+
+    if sess.payment_status != "paid":
+        return render_template("payment_not_complete.html")
+
+    result = finalize_registration_intent_paid(sess.id)
+    car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
+    return render_template("register_success.html", show=show, car=car)
 
 
 # ----------------------------
@@ -371,8 +604,21 @@ def registration_complete(show_slug: str, car_token: str):
     return render_template("registration_complete.html", show=show, car=car)
 
 
+@app.get("/car-card/<slug>/<token>", endpoint="car_card")
+def car_card(slug: str, token: str):
+    show = get_show_by_slug(slug)
+    if not show:
+        return "Show not found.", 404
+
+    car = get_show_car_public_by_token(int(show["id"]), token)
+    if not car:
+        return "Car not found.", 404
+
+    return render_template("registration_complete.html", show=show, car=car)
+
+
 # ----------------------------
-# OWNER CHECK-IN (preprinted workflow)
+# OWNER CHECK-IN
 # ----------------------------
 @app.get("/checkin/<show_slug>/<car_token>")
 def checkin_page(show_slug: str, car_token: str):
@@ -406,7 +652,6 @@ def checkin_submit(show_slug: str, car_token: str):
     make = request.form.get("make", "").strip()
     model = request.form.get("model", "").strip()
 
-    # Check-in requires phone + email (staff workflow)
     if not (name and phone and email and year and make and model):
         return render_template("checkin.html", show=show, car=car_private, error="Please fill out all required fields.")
 
@@ -433,7 +678,7 @@ def checkin_submit(show_slug: str, car_token: str):
 
 
 # ----------------------------
-# WAIVER (PRINTABLE, PAPER-FIRST)
+# WAIVER PRINT
 # ----------------------------
 @app.get("/waiver/<show_slug>/<car_token>")
 def waiver_print(show_slug: str, car_token: str):
@@ -449,7 +694,7 @@ def waiver_print(show_slug: str, car_token: str):
 
 
 # ----------------------------
-# ATTENDEE CAPTURE + OPTIONAL DONATION
+# ATTENDEE CAPTURE + ATTENDANCE FEE
 # ----------------------------
 @app.get("/attend/<show_slug>")
 def attendee_page(show_slug: str):
@@ -477,19 +722,12 @@ def attendee_submit(show_slug: str):
     if not (first_name and last_name):
         return render_template("attendee.html", show=show, error="First and last name are required.")
 
-    # Require phone if opting into sponsor or updates (email stays optional)
     if (sponsor_opt_in or updates_opt_in) and not phone:
         return render_template(
             "attendee.html",
             show=show,
             error="Phone number is required if you choose to receive updates or sponsor information.",
         )
-
-    consent_text = (
-        "By selecting these options, you agree Karman Kar Shows & Events may contact you about the event and, "
-        "if selected, share sponsor offers. Msg/data rates may apply. Opt out anytime."
-    )
-    consent_version = "2026-02-24"
 
     attendee_id = create_attendee(
         show_id=int(show["id"]),
@@ -500,28 +738,33 @@ def attendee_submit(show_slug: str):
         zip_code=zip_code,
         sponsor_opt_in=sponsor_opt_in,
         updates_opt_in=updates_opt_in,
-        consent_text=consent_text,
-        consent_version=consent_version,
+        consent_text=ATTENDEE_CONSENT_TEXT,
+        consent_version=ATTENDEE_CONSENT_VERSION,
     )
 
     record_field_metric(int(show["id"]), "phone", bool(phone))
     record_field_metric(int(show["id"]), "email", bool(email))
 
-    return redirect(url_for("attendee_donate_page", show_slug=show_slug, attendee_id=attendee_id))
+    return redirect(url_for("attendee_fee_page", show_slug=show_slug, attendee_id=attendee_id))
 
 
-@app.get("/attend/<show_slug>/donate/<int:attendee_id>")
-def attendee_donate_page(show_slug: str, attendee_id: int):
+@app.get("/attend/<show_slug>/fee/<int:attendee_id>")
+def attendee_fee_page(show_slug: str, attendee_id: int):
     show = get_show_by_slug(show_slug)
     if not show:
         return "Show not found.", 404
-    return render_template("attendee_donate.html", show=show, attendee_id=attendee_id)
+    return render_template("attendee_fee.html", show=show, attendee_id=attendee_id)
 
 
+# Compatibility old route
+@app.get("/attend/<show_slug>/donate/<int:attendee_id>")
+def attendee_donate_page(show_slug: str, attendee_id: int):
+    return redirect(url_for("attendee_fee_page", show_slug=show_slug, attendee_id=attendee_id))
+
+
+@app.post("/attend/create-fee-checkout")
 @app.post("/attend/create-donation-checkout")
-def create_donation_checkout():
-    _require_stripe()
-
+def create_attendee_fee_checkout():
     show_slug = request.form.get("show_slug", "").strip()
     attendee_id_raw = request.form.get("attendee_id", "").strip()
     amount_raw = request.form.get("amount_dollars", "").strip()
@@ -535,14 +778,12 @@ def create_donation_checkout():
     except ValueError:
         return jsonify({"ok": False, "error": "Invalid attendee."}), 400
 
-    try:
-        dollars = float(amount_raw)
-    except ValueError:
-        dollars = 0.0
+    if amount_raw:
+        amount_cents = _parse_dollars_to_cents(amount_raw, default_cents=int(show["attendee_fee_cents"] or 0))
+    else:
+        amount_cents = int(show["attendee_fee_cents"] or 0)
 
-    amount_cents = int(round(max(dollars, 0.0) * 100))
-
-    if amount_cents == 0:
+    if amount_cents <= 0:
         create_donation_row(int(show["id"]), attendee_id, 0, "skipped")
         return jsonify(
             {
@@ -552,10 +793,16 @@ def create_donation_checkout():
             }
         )
 
-    donation_id = create_donation_row(int(show["id"]), attendee_id, amount_cents, "pending")
+    acct = _connected_account_id(show)
+    if not acct:
+        return jsonify({"ok": False, "error": "The charity payment account is not connected for this show."}), 400
 
-    success_url = _abs_url(url_for("donation_success")) + "?session_id={CHECKOUT_SESSION_ID}"
-    cancel_url = _abs_url(url_for("attendee_donate_page", show_slug=show_slug, attendee_id=attendee_id))
+    _require_platform_stripe()
+
+    fee_row_id = create_donation_row(int(show["id"]), attendee_id, amount_cents, "pending")
+
+    success_url = _abs_url(url_for("attendee_fee_success", show_slug=show_slug)) + "?session_id={CHECKOUT_SESSION_ID}"
+    cancel_url = _abs_url(url_for("attendee_fee_page", show_slug=show_slug, attendee_id=attendee_id))
 
     session_obj = stripe.checkout.Session.create(
         mode="payment",
@@ -565,7 +812,7 @@ def create_donation_checkout():
                 "price_data": {
                     "currency": "usd",
                     "unit_amount": amount_cents,
-                    "product_data": {"name": f"Donation – {show['title']}"},
+                    "product_data": {"name": f"Attendance Fee – {show['title']}"},
                 },
                 "quantity": 1,
             }
@@ -573,36 +820,48 @@ def create_donation_checkout():
         success_url=success_url,
         cancel_url=cancel_url,
         metadata={
+            "payment_item_type": "attendance_fee",
             "show_id": str(show["id"]),
-            "donation_id": str(donation_id),
             "show_slug": show_slug,
+            "donation_id": str(fee_row_id),
         },
+        stripe_account=acct,
     )
 
-    attach_stripe_session_to_donation(donation_id, session_obj.id)
+    attach_stripe_session_to_donation(fee_row_id, session_obj.id, stripe_payment_intent_id="")
     return jsonify({"ok": True, "checkout_url": session_obj.url})
 
 
+@app.get("/attend/<show_slug>/fee-success")
 @app.get("/donation-success")
-def donation_success():
-    _require_stripe()
-
+def attendee_fee_success(show_slug: Optional[str] = None):
     session_id = request.args.get("session_id", "").strip()
     if not session_id:
         return "Missing session_id.", 400
 
-    sess = stripe.checkout.Session.retrieve(session_id)
+    if not show_slug:
+        show_slug = request.args.get("show_slug", "").strip()
+
+    show = get_show_by_slug(show_slug) if show_slug else get_active_show()
+    if not show:
+        return "Show not found.", 404
+
+    acct = _connected_account_id(show)
+    if not acct:
+        return render_template("payment_not_complete.html")
+
+    _require_platform_stripe()
+
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id, stripe_account=acct)
+    except Exception:
+        return render_template("payment_not_complete.html")
+
     if sess.payment_status != "paid":
         return render_template("payment_not_complete.html")
 
     mark_donation_paid(sess.id)
-
-    show_slug = (sess.metadata or {}).get("show_slug", "")
-    if not show_slug:
-        show = get_active_show()
-        show_slug = show["slug"] if show else ""
-
-    return redirect(url_for("attendee_done", show_slug=show_slug))
+    return redirect(url_for("attendee_done", show_slug=show["slug"]))
 
 
 @app.get("/attend/<show_slug>/done")
@@ -614,7 +873,7 @@ def attendee_done(show_slug: str):
 
 
 # ----------------------------
-# QR VOTING (CATEGORY LOCKED)
+# QR VOTING
 # ----------------------------
 @app.get("/v/<show_slug>/<car_token>/<category_slug>")
 def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
@@ -639,14 +898,12 @@ def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
         car=car,
         category_slug=category_slug,
         category_name=category_name,
-        vote_price_cents=VOTE_PRICE_CENTS,
+        vote_price_cents=int(show["vote_price_cents"] or 100),
     )
 
 
 @app.post("/create-checkout-session")
 def create_checkout_session():
-    _require_stripe()
-
     show_slug = request.form.get("show_slug", "").strip()
     car_token = request.form.get("car_token", "").strip()
     category_slug = request.form.get("category_slug", "").strip()
@@ -658,6 +915,10 @@ def create_checkout_session():
 
     if int(show["voting_open"]) != 1:
         return jsonify({"ok": False, "error": "Voting is currently closed."}), 403
+
+    acct = _connected_account_id(show)
+    if not acct:
+        return jsonify({"ok": False, "error": "The charity payment account is not connected for this show."}), 400
 
     if category_slug not in CATEGORY_SLUGS:
         return jsonify({"ok": False, "error": "Invalid category."}), 400
@@ -674,7 +935,20 @@ def create_checkout_session():
     if vote_qty < 1 or vote_qty > 50:
         return jsonify({"ok": False, "error": "Vote quantity must be between 1 and 50."}), 400
 
-    success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}"
+    vote_price_cents = int(show["vote_price_cents"] or 100)
+    amount_cents = vote_qty * vote_price_cents
+
+    _require_platform_stripe()
+
+    vote_intent_id = create_vote_intent(
+        show_id=int(show["id"]),
+        show_car_id=int(car["id"]),
+        category=CATEGORY_SLUGS[category_slug],
+        vote_qty=vote_qty,
+        amount_cents=amount_cents,
+    )
+
+    success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}&show_slug=" + show_slug
     cancel_url = _abs_url(
         url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug)
     )
@@ -686,7 +960,7 @@ def create_checkout_session():
             {
                 "price_data": {
                     "currency": "usd",
-                    "unit_amount": VOTE_PRICE_CENTS,
+                    "unit_amount": vote_price_cents,
                     "product_data": {
                         "name": f"Vote – {CATEGORY_SLUGS[category_slug]} (Car #{car['car_number']})",
                     },
@@ -697,11 +971,21 @@ def create_checkout_session():
         success_url=success_url,
         cancel_url=cancel_url,
         metadata={
+            "payment_item_type": "vote",
             "show_id": str(show["id"]),
+            "show_slug": show_slug,
+            "vote_intent_id": str(vote_intent_id),
             "show_car_id": str(car["id"]),
             "category": CATEGORY_SLUGS[category_slug],
             "vote_qty": str(vote_qty),
         },
+        stripe_account=acct,
+    )
+
+    attach_stripe_session_to_vote_intent(
+        vote_intent_id=vote_intent_id,
+        stripe_session_id=session_obj.id,
+        stripe_payment_intent_id="",
     )
 
     return jsonify({"ok": True, "checkout_url": session_obj.url})
@@ -709,46 +993,39 @@ def create_checkout_session():
 
 @app.get("/success")
 def vote_success():
-    _require_stripe()
-
     session_id = request.args.get("session_id", "").strip()
+    show_slug = request.args.get("show_slug", "").strip()
+
     if not session_id:
         return "Missing session_id.", 400
 
-    sess = stripe.checkout.Session.retrieve(session_id)
+    show = get_show_by_slug(show_slug) if show_slug else get_active_show()
+    if not show:
+        return "Show not found.", 404
+
+    acct = _connected_account_id(show)
+    if not acct:
+        return render_template("payment_not_complete.html")
+
+    _require_platform_stripe()
+
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id, stripe_account=acct)
+    except Exception:
+        return render_template("payment_not_complete.html")
+
     if sess.payment_status != "paid":
         return render_template("payment_not_complete.html")
 
-    md = sess.metadata or {}
-    show_id = int(md.get("show_id", "0") or "0")
-    show_car_id = int(md.get("show_car_id", "0") or "0")
-    category = md.get("category", "")
-    vote_qty = int(md.get("vote_qty", "0") or "0")
-
-    if not (show_id and show_car_id and category and vote_qty):
-        return "Invalid metadata.", 500
-
-    record_paid_votes(
-        show_id=show_id,
-        show_car_id=show_car_id,
-        category=category,
-        vote_qty=vote_qty,
-        amount_cents=int(sess.amount_total or 0),
-        stripe_session_id=sess.id,
-    )
-
+    finalize_vote_intent_paid(sess.id)
     return render_template("vote_success.html")
 
 
 # ----------------------------
-# ADMIN (RESTRICTED)
+# ADMIN
 # ----------------------------
 @app.get("/admin")
 def admin_page():
-    """
-    Publicly reachable, but only shows the dashboard if logged in.
-    Otherwise shows the login form.
-    """
     show = get_active_show()
     next_url = request.args.get("next", "")
     if not session.get("admin_authed"):
@@ -782,6 +1059,81 @@ def admin_logout():
     return redirect(url_for("admin_page"))
 
 
+@app.get("/admin/stripe/connect")
+@require_admin
+def admin_connect_charity_stripe():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    _require_platform_stripe()
+    auth_url = _build_connect_authorize_url(int(show["id"]), show["slug"])
+    return redirect(auth_url)
+
+
+@app.get("/admin/stripe/connect/callback")
+@require_admin
+def admin_connect_charity_stripe_callback():
+    _require_platform_stripe()
+
+    state = request.args.get("state", "").strip()
+    code = request.args.get("code", "").strip()
+    error = request.args.get("error", "").strip()
+
+    expected_state = session.get("stripe_connect_state")
+    show_id = session.get("stripe_connect_show_id")
+
+    if error:
+        flash(f"Stripe connection was not completed: {error}", "error")
+        return redirect(url_for("admin_page"))
+
+    if not state or not expected_state or state != expected_state or not show_id:
+        flash("Invalid Stripe Connect state. Please try again.", "error")
+        return redirect(url_for("admin_page"))
+
+    if not code:
+        flash("Missing Stripe authorization code.", "error")
+        return redirect(url_for("admin_page"))
+
+    try:
+        token_resp = stripe.OAuth.token(grant_type="authorization_code", code=code)
+        stripe_account_id = token_resp.get("stripe_user_id", "")
+
+        connect_email = ""
+        if stripe_account_id:
+            acct = stripe.Account.retrieve(stripe_account_id)
+            connect_email = getattr(acct, "email", "") or ""
+
+        if not stripe_account_id:
+            flash("Stripe did not return a connected account ID.", "error")
+            return redirect(url_for("admin_page"))
+
+        set_show_charity_connect(
+            show_id=int(show_id),
+            stripe_account_id=stripe_account_id,
+            connect_status="connected",
+            connect_email=connect_email,
+        )
+
+        flash("Charity Stripe account connected successfully.", "ok")
+        return redirect(url_for("admin_page"))
+    except Exception as e:
+        flash(f"Unable to connect Stripe account: {e}", "error")
+        return redirect(url_for("admin_page"))
+
+
+@app.post("/admin/stripe/disconnect")
+@require_admin
+def admin_disconnect_charity_stripe():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    clear_show_charity_connect(int(show["id"]))
+    flash("Charity Stripe connection removed from this show.", "ok")
+    return redirect(url_for("admin_page"))
+
+
 @app.post("/admin/show-settings")
 @require_admin
 def admin_show_settings():
@@ -800,26 +1152,52 @@ def admin_show_settings():
         except ValueError:
             ov = None
 
-    update_show_registration_settings(
+    max_cars_raw = request.form.get("max_cars", "").strip()
+    if max_cars_raw == "":
+        max_cars = None
+    else:
+        try:
+            max_cars = int(max_cars_raw)
+        except ValueError:
+            max_cars = None
+
+    registration_fee_cents = _parse_dollars_to_cents(
+        request.form.get("registration_fee_dollars", ""),
+        default_cents=int(show["registration_fee_cents"] or 0),
+    )
+    attendee_fee_cents = _parse_dollars_to_cents(
+        request.form.get("attendee_fee_dollars", ""),
+        default_cents=int(show["attendee_fee_cents"] or 0),
+    )
+    vote_price_cents = _parse_dollars_to_cents(
+        request.form.get("vote_price_dollars", ""),
+        default_cents=int(show["vote_price_cents"] or 100),
+    )
+    if vote_price_cents <= 0:
+        vote_price_cents = 100
+
+    update_show_admin_settings(
         show_id=int(show["id"]),
         show_type=show_type,
         allow_prereg_override=ov,
+        max_cars=max_cars,
+        registration_fee_cents=registration_fee_cents,
+        attendee_fee_cents=attendee_fee_cents,
+        vote_price_cents=vote_price_cents,
+        public_vote_disclosure=request.form.get("public_vote_disclosure", ""),
+        public_registration_disclosure=request.form.get("public_registration_disclosure", ""),
+        public_donation_disclosure=request.form.get("public_donation_disclosure", ""),
+        waiver_text=request.form.get("waiver_text", ""),
+        waiver_version=request.form.get("waiver_version", ""),
     )
 
-    flash("Registration settings saved.", "ok")
+    flash("Show settings saved.", "ok")
     return redirect(url_for("admin_page"))
 
 
 @app.get("/admin/print-cards.pdf")
 @require_admin
 def admin_print_cards_pdf():
-    """
-    Admin PDF generator.
-    Query params:
-      - all=1          -> print all cars
-      - ids=1,2,3      -> print selected show_car ids
-      - back=1         -> include duplex backs (owner check-in QR)
-    """
     from utils.print_cards import build_landscape_cards_pdf
 
     show = get_active_show()
@@ -832,7 +1210,7 @@ def admin_print_cards_pdf():
 
     include_back = back_raw == "1"
 
-    cars = list_show_cars_public(int(show["id"]))  # includes id, car_number, car_token
+    cars = list_show_cars_public(int(show["id"]))
     if not cars:
         return "No cars to print.", 400
 
@@ -859,7 +1237,7 @@ def admin_print_cards_pdf():
     pdf_bytes = build_landscape_cards_pdf(
         show=dict(show),
         cars_rows=[dict(r) for r in selected],
-        base_url=_abs_url(""),  # uses BASE_URL or request.url_root
+        base_url=_abs_url(""),
         static_root=os.path.join(app.root_path, "static"),
         title_sponsor=title_sponsor,
         sponsors=sponsors,
@@ -876,7 +1254,6 @@ def admin_print_cards_pdf():
     )
 
 
-# ---- Snapshot export + close voting/export ----
 @app.get("/admin/export-snapshot.zip")
 @require_admin
 def admin_export_snapshot_zip():
@@ -896,9 +1273,6 @@ def admin_export_snapshot_zip():
 @app.post("/admin/close-voting-and-export")
 @require_admin
 def admin_close_voting_and_export():
-    """
-    One-click: closes voting and downloads a snapshot ZIP immediately.
-    """
     show = get_active_show()
     if not show:
         return "No active show.", 500
@@ -914,7 +1288,6 @@ def admin_close_voting_and_export():
     )
 
 
-# ---- Voting controls ----
 @app.post("/admin/toggle-voting")
 @require_admin
 def admin_toggle_voting():
@@ -942,7 +1315,6 @@ def admin_close_voting():
     return redirect(url_for("admin_page"))
 
 
-# ---- Reset votes (export snapshot FIRST) ----
 @app.post("/admin/reset-votes")
 @require_admin
 def admin_reset_votes():
@@ -961,7 +1333,6 @@ def admin_reset_votes():
     )
 
 
-# ---- Leaderboard / exports ----
 @app.get("/admin/leaderboard")
 @require_admin
 def admin_leaderboard():
@@ -1026,7 +1397,6 @@ def admin_export_votes():
     return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="votes_export.csv")
 
 
-# ---- Placeholder cars ----
 @app.get("/admin/placeholders")
 @require_admin
 def admin_placeholders():
@@ -1080,7 +1450,6 @@ def admin_waiver_received():
     return redirect(url_for("admin_placeholders"))
 
 
-# ---- Sponsors ----
 @app.get("/admin/sponsors")
 @require_admin
 def admin_sponsors():
@@ -1101,7 +1470,7 @@ def admin_sponsors_add():
         return "No active show.", 500
 
     name = request.form.get("name", "").strip()
-    logo_path = request.form.get("logo_path", "").strip()  # e.g. img/sponsors/acme.png
+    logo_path = request.form.get("logo_path", "").strip()
     website_url = request.form.get("website_url", "").strip()
     placement = request.form.get("placement", "standard").strip()
     sort_order_raw = request.form.get("sort_order", "100").strip()
@@ -1144,9 +1513,6 @@ def admin_sponsors_remove():
     return redirect(url_for("admin_sponsors"))
 
 
-# ---------------------------
-# Temporary Debug route Start
-# ---------------------------
 @app.get("/admin/debug/routes")
 @require_admin
 def admin_debug_routes():
@@ -1165,8 +1531,118 @@ def admin_debug_routes():
 
 
 # ----------------------------
+# WEBHOOK
+# ----------------------------
+@app.post("/stripe/webhook")
+def stripe_webhook():
+    _require_platform_stripe()
+
+    payload = request.get_data(as_text=False)
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    if not STRIPE_WEBHOOK_SECRET:
+        return "Webhook secret not configured.", 500
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except ValueError:
+        return "Invalid payload.", 400
+    except stripe.error.SignatureVerificationError:
+        return "Invalid signature.", 400
+
+    event_id = event.get("id", "")
+    event_type = event.get("type", "")
+
+    if event_id and has_processed_webhook_event(event_id):
+        return jsonify({"ok": True, "duplicate": True})
+
+    try:
+        if event_type in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+            obj = event["data"]["object"]
+            session_id = obj.get("id", "")
+            payment_status = obj.get("payment_status", "")
+            metadata = obj.get("metadata", {}) or {}
+            item_type = metadata.get("payment_item_type", "")
+
+            if session_id and payment_status == "paid":
+                if item_type == "registration":
+                    finalize_registration_intent_paid(session_id)
+                elif item_type == "vote":
+                    finalize_vote_intent_paid(session_id)
+                elif item_type == "attendance_fee":
+                    mark_donation_paid(session_id)
+
+        if event_id:
+            mark_webhook_event_processed(event_id, event_type)
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        return f"Webhook processing error: {e}", 500
+
+
+# ----------------------------
 # RUN
 # ----------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
+```
+
+## Important compile / integration notes
+
+#This `app.py` is matched to the **new database file**, not your old one.
+
+#A few things to check right after pasting:
+
+### 1. Environment variables
+
+#Set these in Railway:
+
+#```bash
+#PLATFORM_STRIPE_SECRET_KEY=sk_...
+#STRIPE_WEBHOOK_SECRET=whsec_...
+#STRIPE_CLIENT_ID=ca_...
+#BASE_URL=https://your-app-url.up.railway.app
+#FLASK_SECRET=change-me
+#ADMIN_PASSWORD=change-me
+#```
+
+### 2. Templates expected by this file
+
+#This file expects these to exist:
+
+#* `admin.html`
+#* `register.html`
+#* `register_checkout.html`
+#* `register_success.html`
+#* `vote_qty.html`
+#* `attendee_fee.html`
+#* `attendee.html`
+#* `attendee_done.html`
+#* `payment_not_complete.html`
+
+### 3. One likely runtime issue if not yet updated
+
+#You renamed the attendance template direction, so if `templates/attendee_fee.html` does not exist yet, this route will fail at runtime:
+
+#```python
+#return render_template("attendee_fee.html", show=show, attendee_id=attendee_id)
+#```
+
+### 4. Backward compatibility included
+
+#I kept these compatibility paths:
+
+#* old donation route redirects to fee route
+#* old `/attend/create-donation-checkout` still works
+#* old `/donation-success` still works
+
+### 5. Next best file to generate
+
+#The next file that should be created or updated is:
+
+#```text
+#templates/attendee_fee.html
+#```
+
+#because this new `app.py` now expects that filename.

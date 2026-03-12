@@ -1,3 +1,4 @@
+html
 {% extends "base.html" %}
 {% set title = "Registration Closed • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
 
@@ -8,21 +9,54 @@
       Registration closed
     </div>
 
-    <h1 class="mt-4 text-3xl font-semibold tracking-tight">Pre-registration is not available</h1>
+    <h1 class="mt-4 text-3xl font-semibold tracking-tight">
+      {% if error %}
+        Registration is not available
+      {% else %}
+        Pre-registration is not available
+      {% endif %}
+    </h1>
 
-    <p class="mt-2 text-slate-700">
-      This show is currently set to a pop-up / day-of workflow, so pre-registration is turned off.
-      If you believe this is a mistake, an admin can enable it under <span class="font-semibold">Admin → Show Settings</span>.
-    </p>
+    {% if error %}
+      <p class="mt-2 text-slate-700">
+        {{ error }}
+      </p>
+    {% else %}
+      <p class="mt-2 text-slate-700">
+        This show is currently set to a pop-up or day-of workflow, so pre-registration is turned off.
+        If this was not intended, an admin can enable it under
+        <span class="font-semibold">Admin → Show Settings</span>.
+      </p>
+    {% endif %}
 
     {% if show %}
       <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div class="text-sm text-slate-800">
           <div class="font-semibold">{{ show["title"] }}</div>
-          {% if show["date"] %}<div class="mt-1 text-slate-600">{{ show["date"] }}</div>{% endif %}
-          {% if show["location_name"] %}<div class="mt-1 text-slate-600">{{ show["location_name"] }}</div>{% endif %}
+          {% if show["date"] %}
+            <div class="mt-1 text-slate-600">{{ show["date"] }}</div>
+          {% endif %}
+          {% if show["time"] %}
+            <div class="mt-1 text-slate-600">{{ show["time"] }}</div>
+          {% endif %}
+          {% if show["location_name"] %}
+            <div class="mt-1 text-slate-600">{{ show["location_name"] }}</div>
+          {% endif %}
+          {% if show["address"] %}
+            <div class="mt-1 text-slate-600">{{ show["address"] }}</div>
+          {% endif %}
         </div>
       </div>
+
+      {% if show["max_cars"] %}
+        <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          Capacity:
+          <span class="font-semibold">{{ registered_cars }}</span>
+          of
+          <span class="font-semibold">{{ show["max_cars"] }}</span>
+          registered
+        </div>
+      {% endif %}
 
       <div class="mt-6 flex flex-wrap gap-3">
         <a class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90"
