@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import io
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import qrcode
 from PIL import Image
@@ -20,7 +20,7 @@ CATEGORY_SLUGS: List[Tuple[str, str]] = [
     ("peoples-choice", "People’s Choice"),
 ]
 
-# Smaller front QR codes so sponsor logos can breathe
+# Smaller front QR codes so sponsor logos have room
 VOTE_QR_BOX_SIZE = 5
 VOTE_QR_BORDER = 2
 
@@ -80,7 +80,11 @@ def _dedupe_sponsors(rows: List[dict]) -> List[dict]:
     seen = set()
     out: List[dict] = []
     for s in rows:
-        key = (s.get("id"), (s.get("name") or "").strip().lower(), (s.get("logo_path") or "").strip())
+        key = (
+            s.get("id"),
+            (s.get("name") or "").strip().lower(),
+            (s.get("logo_path") or "").strip(),
+        )
         if key in seen:
             continue
         seen.add(key)
@@ -100,7 +104,7 @@ def build_landscape_cards_pdf(
     mirror_back_pages: bool = False,
 ) -> bytes:
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib.pagesizes import landscape, letter
     from reportlab.lib.units import inch
     from reportlab.pdfgen import canvas as rl_canvas
 
@@ -119,7 +123,15 @@ def build_landscape_cards_pdf(
             return None
         return safe_open_rgba(static_fs(lp))
 
-    def draw_box(x: float, y: float, w: float, h: float, stroke=colors.black, fill=None, lw: float = 1.0) -> None:
+    def draw_box(
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        stroke=colors.black,
+        fill=None,
+        lw: float = 1.0,
+    ) -> None:
         c.saveState()
         c.setLineWidth(lw)
         c.setStrokeColor(stroke)
@@ -130,19 +142,27 @@ def build_landscape_cards_pdf(
             c.rect(x, y, w, h, stroke=1, fill=0)
         c.restoreState()
 
-    def draw_logo_row(logo_imgs: List[Image.Image], x: float, y: float, w: float, h: float, max_items: int) -> None:
+    def draw_logo_row(
+        logo_imgs: List[Image.Image],
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        max_items: int,
+    ) -> None:
         if not logo_imgs:
             return
+
         items = logo_imgs[:max_items]
         gap = 8
         count = len(items)
         cell_w = (w - gap * (count - 1)) / count if count else w
+
         for i, img in enumerate(items):
             draw_image_contain(c, img, x + i * (cell_w + gap), y, cell_w, h)
 
     brand_logo = safe_open_rgba(static_fs("img/karmankarshows-logo.png"))
 
-    # Build sponsor groups from current data shape
     sponsor_rows: List[dict] = []
     if title_sponsor:
         sponsor_rows.append(dict(title_sponsor))
@@ -174,17 +194,13 @@ def build_landscape_cards_pdf(
         else:
             standard_imgs.append(img)
 
-    # Fallback behavior for older data:
-    # if there is no explicit presenting sponsor, use the old title_sponsor slot as the hero sponsor
     if not presenting_imgs and title_sponsor:
         fallback_img = sponsor_logo_img(dict(title_sponsor))
         if fallback_img:
             presenting_imgs = [fallback_img]
-            # Avoid double-drawing it in title row
             if title_imgs:
                 title_imgs = title_imgs[1:] if len(title_imgs) > 0 else []
 
-    # Any uncategorized standards get folded into silver so they still appear on the card
     if standard_imgs:
         silver_imgs.extend(standard_imgs)
 
@@ -201,21 +217,16 @@ def build_landscape_cards_pdf(
         vehicle_parts = [p for p in [year, make, model] if p and p.upper() != "TBD"]
         vehicle_text = " ".join(vehicle_parts) if vehicle_parts else "_________________________________________"
 
-        # ----------------------------
         # FRONT PAGE
-        # ----------------------------
         c.setTitle(f"{show.get('title', 'Voting Cards')} - Car #{car_number}")
 
-        # Header band
         header_h = 1.75 * inch
         header_y = page_h - margin - header_h
         draw_box(margin, header_y, page_w - 2 * margin, header_h, lw=1.2)
 
-        # Brand logo left
         if brand_logo:
             draw_image_contain(c, brand_logo, margin + 8, header_y + 12, 1.45 * inch, header_h - 24)
 
-        # Presenting sponsor centered across header top
         if presenting_imgs:
             c.setFont("Helvetica-Bold", 11)
             c.drawCentredString(page_w / 2, page_h - margin - 14, "PRESENTED BY")
@@ -228,7 +239,6 @@ def build_landscape_cards_pdf(
                 0.70 * inch,
             )
 
-        # Title sponsors under presenting
         if title_imgs:
             c.setFont("Helvetica-Bold", 9)
             c.drawCentredString(page_w / 2, header_y + 0.52 * inch, "TITLE SPONSORS")
@@ -236,8 +246,6 @@ def build_landscape_cards_pdf(
             row_x = (page_w - row_w) / 2
             draw_logo_row(title_imgs, row_x, header_y + 0.06 * inch, row_w, 0.34 * inch, max_items=2)
 
-        # Right-side card title block
-        right_title_x = page_w - margin - 3.10 * inch
         c.setFont("Helvetica-Bold", 28)
         c.drawRightString(page_w - margin - 10, header_y + 0.98 * inch, f"CAR #{car_number}")
         c.setFont("Helvetica-Bold", 12)
@@ -245,7 +253,6 @@ def build_landscape_cards_pdf(
         c.setFont("Helvetica", 10)
         c.drawRightString(page_w - margin - 10, header_y + 0.58 * inch, str(show.get("title") or ""))
 
-        # Middle content split: left info / right QR grid
         middle_y = margin + 1.55 * inch
         middle_h = 4.35 * inch
         total_w = page_w - 2 * margin
@@ -253,7 +260,6 @@ def build_landscape_cards_pdf(
         gap = 0.18 * inch
         right_w = total_w - left_w - gap
 
-        # Left info panel
         draw_box(margin, middle_y, left_w, middle_h, lw=1.0)
         c.setFont("Helvetica-Bold", 14)
         c.drawString(margin + 10, middle_y + middle_h - 22, "VEHICLE INFO")
@@ -297,7 +303,6 @@ def build_landscape_cards_pdf(
             c.drawString(margin + 12, yy, line)
             yy -= 12
 
-        # Right QR area
         qr_x = margin + left_w + gap
         qr_y = middle_y
         qr_h = middle_h
@@ -332,7 +337,6 @@ def build_landscape_cards_pdf(
             c.setFont("Helvetica", 9)
             c.drawCentredString(x0 + cell_w / 2, y0 + 6, label)
 
-        # Bottom sponsor footer
         footer_h = 1.15 * inch
         footer_y = margin
         draw_box(margin, footer_y, page_w - 2 * margin, footer_h, lw=1.0)
@@ -340,25 +344,36 @@ def build_landscape_cards_pdf(
         c.setFont("Helvetica-Bold", 9)
         c.drawString(margin + 10, footer_y + footer_h - 14, "GOLD SPONSORS")
         if gold_imgs:
-            draw_logo_row(gold_imgs, margin + 95, footer_y + 0.46 * inch, page_w - 2 * margin - 105, 0.28 * inch, max_items=4)
+            draw_logo_row(
+                gold_imgs,
+                margin + 95,
+                footer_y + 0.46 * inch,
+                page_w - 2 * margin - 105,
+                0.28 * inch,
+                max_items=4,
+            )
 
         c.setFont("Helvetica-Bold", 9)
         c.drawString(margin + 10, footer_y + 0.28 * inch, "SILVER SPONSORS")
         if silver_imgs:
-            draw_logo_row(silver_imgs, margin + 95, footer_y + 0.06 * inch, page_w - 2 * margin - 105, 0.22 * inch, max_items=6)
+            draw_logo_row(
+                silver_imgs,
+                margin + 95,
+                footer_y + 0.06 * inch,
+                page_w - 2 * margin - 105,
+                0.22 * inch,
+                max_items=6,
+            )
 
         c.showPage()
 
-        # ----------------------------
         # BACK PAGE
-        # ----------------------------
         if include_back:
             if mirror_back_pages:
                 c.saveState()
                 c.translate(page_w, 0)
                 c.scale(-1, 1)
 
-            # Back header
             back_header_h = 1.30 * inch
             back_header_y = page_h - margin - back_header_h
             draw_box(margin, back_header_y, page_w - 2 * margin, back_header_h, lw=1.2)
@@ -384,7 +399,6 @@ def build_landscape_cards_pdf(
                 "Scan below to claim this number and complete registration",
             )
 
-            # Center registration QR
             claim_url = f"{base_url.rstrip('/')}/claim/{show['slug']}/{car_token}"
             qr_back = make_qr(claim_url, box_size=REGISTER_QR_BOX_SIZE, border=REGISTER_QR_BORDER)
 
@@ -397,7 +411,6 @@ def build_landscape_cards_pdf(
             c.setFont("Helvetica-Bold", 13)
             c.drawCentredString(qx + qr_box_size / 2, qy - 2, "SCAN TO REGISTER THIS CAR")
 
-            # Right-side steps
             steps_x = qx + qr_box_size + 0.60 * inch
             steps_y = qy + qr_box_size - 2
             steps_w = page_w - margin - steps_x
@@ -434,7 +447,6 @@ def build_landscape_cards_pdf(
                 c.drawString(steps_x + 18, yy, f"• {line}")
                 yy -= 16
 
-            # Footer disclosure
             footer_box_y = margin
             footer_box_h = 0.95 * inch
             draw_box(margin, footer_box_y, page_w - 2 * margin, footer_box_h, lw=1.0)
@@ -461,51 +473,3 @@ def build_landscape_cards_pdf(
     c.save()
     buf.seek(0)
     return buf.getvalue()
-```
-
----
-
-## Tiny `app.py` change you also need
-
-Right now your sponsor add route collapses almost everything into `standard`, which prevents the new card from sizing sponsors by level.
-
-Find this block in `app.py`:
-
-```python
-if placement == "title":
-    set_title_sponsor(int(show["id"]), sponsor_id)
-else:
-    attach_sponsor_to_show(int(show["id"]), sponsor_id, placement="standard", sort_order=sort_order)
-```
-
-Replace it with this:
-
-```python
-allowed_placements = {"presenting", "title", "gold", "silver", "standard"}
-if placement not in allowed_placements:
-    placement = "standard"
-
-attach_sponsor_to_show(
-    int(show["id"]),
-    sponsor_id,
-    placement=placement,
-    sort_order=sort_order,
-)
-```
-
-That is important because your new print layout depends on real sponsor tiers.
-
----
-
-## `admin_sponsors.html` also needs the placement options
-
-Wherever the sponsor placement dropdown is, use:
-
-```html
-<select name="placement">
-  <option value="presenting">Presenting Sponsor</option>
-  <option value="title">Title Sponsor</option>
-  <option value="gold">Gold Sponsor</option>
-  <option value="silver">Silver Sponsor</option>
-  <option value="standard">Standard</option>
-</select>
