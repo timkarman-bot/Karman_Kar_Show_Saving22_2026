@@ -1,10 +1,11 @@
 # utils/print_cards.py
-# Generates landscape voting cards PDF (and optional mirrored back pages for duplex)
+# Landscape voting cards with tiered sponsor layout and optional back page
 
 from __future__ import annotations
 
 import io
-from typing import Any, List, Optional, Tuple
+import os
+from typing import Any, Dict, List, Optional, Tuple
 
 import qrcode
 from PIL import Image
@@ -17,8 +18,15 @@ CATEGORY_SLUGS: List[Tuple[str, str]] = [
     ("coast-guard", "Coast Guard"),
     ("space-force", "Space Force"),
     ("peoples-choice", "People’s Choice"),
-    ("", ""),  # spare
 ]
+
+# Smaller front QR codes so sponsor logos can breathe
+VOTE_QR_BOX_SIZE = 5
+VOTE_QR_BORDER = 2
+
+# Slightly smaller back QR
+REGISTER_QR_BOX_SIZE = 9
+REGISTER_QR_BORDER = 2
 
 
 def safe_open_rgba(path: str) -> Optional[Image.Image]:
@@ -43,11 +51,6 @@ def make_qr(url: str, box_size: int = 7, border: int = 2) -> Image.Image:
 
 
 def draw_image_contain(c: Any, img: Image.Image, x: float, y: float, w: float, h: float) -> None:
-    """
-    Draw PIL image into a ReportLab canvas, contained within (x, y, w, h).
-    Imports reportlab lazily so importing this module won't crash the app
-    if reportlab isn't installed yet.
-    """
     from reportlab.lib.utils import ImageReader
 
     iw, ih = img.size
@@ -66,6 +69,25 @@ def draw_image_contain(c: Any, img: Image.Image, x: float, y: float, w: float, h
     c.drawImage(ImageReader(final), dx, dy, width=nw, height=nh, mask="auto")
 
 
+def _norm_tier(s: dict) -> str:
+    raw = (s.get("tier") or s.get("placement") or "standard").strip().lower()
+    if raw in {"presenting", "title", "gold", "silver", "standard"}:
+        return raw
+    return "standard"
+
+
+def _dedupe_sponsors(rows: List[dict]) -> List[dict]:
+    seen = set()
+    out: List[dict] = []
+    for s in rows:
+        key = (s.get("id"), (s.get("name") or "").strip().lower(), (s.get("logo_path") or "").strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
 def build_landscape_cards_pdf(
     *,
     show: dict,
@@ -75,24 +97,9 @@ def build_landscape_cards_pdf(
     title_sponsor: Optional[dict],
     sponsors: List[dict],
     include_back: bool = False,
-    mirror_back_pages: bool = True,
+    mirror_back_pages: bool = False,
 ) -> bytes:
-    """
-    Landscape 8.5x11 per car.
-
-    Front:
-    - Voting QR codes
-    - Title sponsor and sponsor strip
-    - Basic owner/vehicle write-in area
-
-    Back (optional duplex):
-    - Owner registration / placeholder claim QR
-    - For placeholder/day-of cards this points to /claim/<show_slug>/<car_token>
-
-    NOTE:
-    ReportLab imports are inside this function so the app can boot even if
-    reportlab isn't installed yet.
-    """
+    from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib.units import inch
     from reportlab.pdfgen import canvas as rl_canvas
@@ -102,7 +109,7 @@ def build_landscape_cards_pdf(
     c = rl_canvas.Canvas(buf, pagesize=landscape(letter))
 
     def static_fs(rel_path: str) -> str:
-        return f"{static_root.rstrip('/')}/{rel_path}"
+        return os.path.join(static_root, rel_path.replace("/", os.sep))
 
     def sponsor_logo_img(s: Optional[dict]) -> Optional[Image.Image]:
         if not s:
@@ -112,110 +119,233 @@ def build_landscape_cards_pdf(
             return None
         return safe_open_rgba(static_fs(lp))
 
+    def draw_box(x: float, y: float, w: float, h: float, stroke=colors.black, fill=None, lw: float = 1.0) -> None:
+        c.saveState()
+        c.setLineWidth(lw)
+        c.setStrokeColor(stroke)
+        if fill is not None:
+            c.setFillColor(fill)
+            c.rect(x, y, w, h, stroke=1, fill=1)
+        else:
+            c.rect(x, y, w, h, stroke=1, fill=0)
+        c.restoreState()
+
+    def draw_logo_row(logo_imgs: List[Image.Image], x: float, y: float, w: float, h: float, max_items: int) -> None:
+        if not logo_imgs:
+            return
+        items = logo_imgs[:max_items]
+        gap = 8
+        count = len(items)
+        cell_w = (w - gap * (count - 1)) / count if count else w
+        for i, img in enumerate(items):
+            draw_image_contain(c, img, x + i * (cell_w + gap), y, cell_w, h)
+
     brand_logo = safe_open_rgba(static_fs("img/karmankarshows-logo.png"))
 
-    title_logo = sponsor_logo_img(title_sponsor)
-    std_logos: List[Image.Image] = []
-    for s in sponsors or []:
+    # Build sponsor groups from current data shape
+    sponsor_rows: List[dict] = []
+    if title_sponsor:
+        sponsor_rows.append(dict(title_sponsor))
+    sponsor_rows.extend([dict(s) for s in (sponsors or [])])
+    sponsor_rows = _dedupe_sponsors(sponsor_rows)
+
+    sponsor_with_imgs: List[Tuple[dict, Image.Image]] = []
+    for s in sponsor_rows:
         img = sponsor_logo_img(s)
         if img:
-            std_logos.append(img)
+            sponsor_with_imgs.append((s, img))
 
-    margin = 0.85 * inch
+    presenting_imgs: List[Image.Image] = []
+    title_imgs: List[Image.Image] = []
+    gold_imgs: List[Image.Image] = []
+    silver_imgs: List[Image.Image] = []
+    standard_imgs: List[Image.Image] = []
+
+    for s, img in sponsor_with_imgs:
+        tier = _norm_tier(s)
+        if tier == "presenting":
+            presenting_imgs.append(img)
+        elif tier == "title":
+            title_imgs.append(img)
+        elif tier == "gold":
+            gold_imgs.append(img)
+        elif tier == "silver":
+            silver_imgs.append(img)
+        else:
+            standard_imgs.append(img)
+
+    # Fallback behavior for older data:
+    # if there is no explicit presenting sponsor, use the old title_sponsor slot as the hero sponsor
+    if not presenting_imgs and title_sponsor:
+        fallback_img = sponsor_logo_img(dict(title_sponsor))
+        if fallback_img:
+            presenting_imgs = [fallback_img]
+            # Avoid double-drawing it in title row
+            if title_imgs:
+                title_imgs = title_imgs[1:] if len(title_imgs) > 0 else []
+
+    # Any uncategorized standards get folded into silver so they still appear on the card
+    if standard_imgs:
+        silver_imgs.extend(standard_imgs)
+
+    margin = 0.55 * inch
 
     for r in cars_rows:
         car_number = int(r["car_number"])
         car_token = str(r["car_token"])
+        owner_name = (r.get("owner_name") or "").strip() or "_________________________"
+        year = (r.get("year") or "").strip()
+        make = (r.get("make") or "").strip()
+        model = (r.get("model") or "").strip()
+
+        vehicle_parts = [p for p in [year, make, model] if p and p.upper() != "TBD"]
+        vehicle_text = " ".join(vehicle_parts) if vehicle_parts else "_________________________________________"
 
         # ----------------------------
         # FRONT PAGE
         # ----------------------------
-        header_logo_w = 2.2 * inch
-        header_logo_h = 0.75 * inch
-        header_y = page_h - margin - header_logo_h
+        c.setTitle(f"{show.get('title', 'Voting Cards')} - Car #{car_number}")
 
+        # Header band
+        header_h = 1.75 * inch
+        header_y = page_h - margin - header_h
+        draw_box(margin, header_y, page_w - 2 * margin, header_h, lw=1.2)
+
+        # Brand logo left
         if brand_logo:
-            draw_image_contain(c, brand_logo, margin, header_y, header_logo_w, header_logo_h)
+            draw_image_contain(c, brand_logo, margin + 8, header_y + 12, 1.45 * inch, header_h - 24)
 
-        title_x = margin + (2.35 * inch if brand_logo else 0)
+        # Presenting sponsor centered across header top
+        if presenting_imgs:
+            c.setFont("Helvetica-Bold", 11)
+            c.drawCentredString(page_w / 2, page_h - margin - 14, "PRESENTED BY")
+            draw_image_contain(
+                c,
+                presenting_imgs[0],
+                (page_w / 2) - 1.55 * inch,
+                header_y + 0.60 * inch,
+                3.10 * inch,
+                0.70 * inch,
+            )
 
+        # Title sponsors under presenting
+        if title_imgs:
+            c.setFont("Helvetica-Bold", 9)
+            c.drawCentredString(page_w / 2, header_y + 0.52 * inch, "TITLE SPONSORS")
+            row_w = 4.40 * inch
+            row_x = (page_w - row_w) / 2
+            draw_logo_row(title_imgs, row_x, header_y + 0.06 * inch, row_w, 0.34 * inch, max_items=2)
+
+        # Right-side card title block
+        right_title_x = page_w - margin - 3.10 * inch
         c.setFont("Helvetica-Bold", 28)
-        c.drawString(title_x, page_h - margin - 40, f"VOTE FOR CAR #{car_number}")
+        c.drawRightString(page_w - margin - 10, header_y + 0.98 * inch, f"CAR #{car_number}")
+        c.setFont("Helvetica-Bold", 12)
+        c.drawRightString(page_w - margin - 10, header_y + 0.75 * inch, "SCAN TO VOTE")
+        c.setFont("Helvetica", 10)
+        c.drawRightString(page_w - margin - 10, header_y + 0.58 * inch, str(show.get("title") or ""))
 
-        c.setFont("Helvetica", 12)
-        c.drawString(title_x, page_h - margin - 62, str(show.get("title") or ""))
+        # Middle content split: left info / right QR grid
+        middle_y = margin + 1.55 * inch
+        middle_h = 4.35 * inch
+        total_w = page_w - 2 * margin
+        left_w = 2.60 * inch
+        gap = 0.18 * inch
+        right_w = total_w - left_w - gap
 
+        # Left info panel
+        draw_box(margin, middle_y, left_w, middle_h, lw=1.0)
         c.setFont("Helvetica-Bold", 14)
-        c.drawString(margin, page_h - margin - 105, "VOTING RULES")
+        c.drawString(margin + 10, middle_y + middle_h - 22, "VEHICLE INFO")
 
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(margin + 10, middle_y + middle_h - 46, "Owner")
         c.setFont("Helvetica", 12)
-        rules = [
-            "• All votes are paid votes. Scan the code and choose quantity.",
-            "• Branch Awards: Only veterans, active military, or in memory of a veteran should vote by branch.",
-            "• People’s Choice: Everyone can vote.",
+        c.drawString(margin + 10, middle_y + middle_h - 62, owner_name[:34])
+
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(margin + 10, middle_y + middle_h - 92, "Vehicle")
+        c.setFont("Helvetica", 11)
+        c.drawString(margin + 10, middle_y + middle_h - 108, vehicle_text[:42])
+
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(margin + 10, middle_y + middle_h - 146, "How voting works")
+        c.setFont("Helvetica", 10)
+        info_lines = [
+            "1. Scan a code on the right.",
+            "2. Choose the number of votes.",
+            "3. Complete payment.",
+            "$1 per vote unless changed by the event.",
         ]
-        y = page_h - margin - 125
-        for line in rules:
-            c.drawString(margin, y, line)
-            y -= 16
+        yy = middle_y + middle_h - 162
+        for line in info_lines:
+            c.drawString(margin + 12, yy, line)
+            yy -= 14
 
-        sponsor_y = page_h - margin - 1.95 * inch
-        sponsor_h = 1.05 * inch
-        sponsor_w = page_w - 2 * margin
-        left_w = sponsor_w * 0.55
-        right_w = sponsor_w - left_w
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(margin + 10, middle_y + 62, "Branch awards")
+        c.setFont("Helvetica", 9)
+        branch_lines = [
+            "Army, Navy, Air Force, Marines,",
+            "Coast Guard, and Space Force are for",
+            "veterans, active military, or in",
+            "memory of a veteran.",
+            "People's Choice is open to everyone.",
+        ]
+        yy = middle_y + 46
+        for line in branch_lines:
+            c.drawString(margin + 12, yy, line)
+            yy -= 12
 
-        if title_logo:
-            draw_image_contain(c, title_logo, margin, sponsor_y, left_w, sponsor_h)
+        # Right QR area
+        qr_x = margin + left_w + gap
+        qr_y = middle_y
+        qr_h = middle_h
+        draw_box(qr_x, qr_y, right_w, qr_h, lw=1.0)
 
-        cols, rows = 3, 2
-        cell_w = right_w / cols
-        cell_h = sponsor_h / rows
-        for i, img in enumerate(std_logos[: cols * rows]):
-            col = i % cols
-            row = i // cols
-            x0 = margin + left_w + col * cell_w
-            y0 = sponsor_y + (rows - 1 - row) * cell_h
-            draw_image_contain(c, img, x0, y0, cell_w, cell_h)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(qr_x + 10, qr_y + qr_h - 20, "Vote for this vehicle")
 
-        grid_x = margin
-        grid_y = margin + 1.35 * inch
-        grid_w = page_w - 2 * margin
-        grid_h = 3.55 * inch
+        cols = 4
+        rows = 2
+        inner_pad_x = 10
+        inner_pad_y = 16
+        label_h = 18
+        top_reserved = 18
+        cell_w = (right_w - (inner_pad_x * 2)) / cols
+        cell_h = (qr_h - top_reserved - (inner_pad_y * 2)) / rows
 
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(grid_x, grid_y + grid_h + 10, "SCAN TO VOTE")
-
-        cols, rows = 4, 2
-        pad = 10
-        cell_w = (grid_w - 2 * pad) / cols
-        cell_h = (grid_h - 2 * pad) / rows
-
+        grid_items: List[Tuple[str, str]] = CATEGORY_SLUGS + [("", "")]
         for i in range(cols * rows):
             col = i % cols
             row = i // cols
-            x0 = grid_x + pad + col * cell_w
-            y0 = grid_y + pad + (rows - 1 - row) * cell_h
+            x0 = qr_x + inner_pad_x + col * cell_w
+            y0 = qr_y + qr_h - top_reserved - inner_pad_y - (row + 1) * cell_h
 
-            slug, label = CATEGORY_SLUGS[i]
+            slug, label = grid_items[i]
             if slug:
                 vote_url = f"{base_url.rstrip('/')}/v/{show['slug']}/{car_token}/{slug}"
-                qr_img = make_qr(vote_url, box_size=7, border=2)
-                box = min(cell_w, cell_h) - 28
-                draw_image_contain(c, qr_img, x0 + 6, y0 + 18, box, box)
+                qr_img = make_qr(vote_url, box_size=VOTE_QR_BOX_SIZE, border=VOTE_QR_BORDER)
+                qr_box = min(cell_w - 10, cell_h - label_h - 4)
+                draw_image_contain(c, qr_img, x0 + (cell_w - qr_box) / 2, y0 + label_h, qr_box, qr_box)
 
-            c.setFont("Helvetica", 11)
-            c.drawCentredString(x0 + cell_w / 2, y0 + 4, label)
+            c.setFont("Helvetica", 9)
+            c.drawCentredString(x0 + cell_w / 2, y0 + 6, label)
 
-        c.setFont("Helvetica-Bold", 13)
-        c.drawString(margin, margin + 0.80 * inch, "OWNER / VEHICLE INFO (Write in)")
-        c.setFont("Helvetica", 12)
-        c.drawString(margin, margin + 0.55 * inch, "Owner name: _____________________________")
-        c.drawString(
-            margin,
-            margin + 0.30 * inch,
-            "Year: ________   Make: ________________________   Model: ________________________",
-        )
+        # Bottom sponsor footer
+        footer_h = 1.15 * inch
+        footer_y = margin
+        draw_box(margin, footer_y, page_w - 2 * margin, footer_h, lw=1.0)
+
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(margin + 10, footer_y + footer_h - 14, "GOLD SPONSORS")
+        if gold_imgs:
+            draw_logo_row(gold_imgs, margin + 95, footer_y + 0.46 * inch, page_w - 2 * margin - 105, 0.28 * inch, max_items=4)
+
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(margin + 10, footer_y + 0.28 * inch, "SILVER SPONSORS")
+        if silver_imgs:
+            draw_logo_row(silver_imgs, margin + 95, footer_y + 0.06 * inch, page_w - 2 * margin - 105, 0.22 * inch, max_items=6)
 
         c.showPage()
 
@@ -228,50 +358,100 @@ def build_landscape_cards_pdf(
                 c.translate(page_w, 0)
                 c.scale(-1, 1)
 
+            # Back header
+            back_header_h = 1.30 * inch
+            back_header_y = page_h - margin - back_header_h
+            draw_box(margin, back_header_y, page_w - 2 * margin, back_header_h, lw=1.2)
+
+            if presenting_imgs:
+                c.setFont("Helvetica-Bold", 11)
+                c.drawCentredString(page_w / 2, page_h - margin - 14, "PRESENTED BY")
+                draw_image_contain(
+                    c,
+                    presenting_imgs[0],
+                    (page_w / 2) - 1.50 * inch,
+                    back_header_y + 0.22 * inch,
+                    3.00 * inch,
+                    0.58 * inch,
+                )
+
             c.setFont("Helvetica-Bold", 24)
-            c.drawString(margin, page_h - margin - 40, f"OWNER REGISTRATION — CAR #{car_number}")
+            c.drawRightString(page_w - margin - 10, back_header_y + 0.65 * inch, f"REGISTER CAR #{car_number}")
+            c.setFont("Helvetica", 11)
+            c.drawRightString(
+                page_w - margin - 10,
+                back_header_y + 0.40 * inch,
+                "Scan below to claim this number and complete registration",
+            )
+
+            # Center registration QR
+            claim_url = f"{base_url.rstrip('/')}/claim/{show['slug']}/{car_token}"
+            qr_back = make_qr(claim_url, box_size=REGISTER_QR_BOX_SIZE, border=REGISTER_QR_BORDER)
+
+            qr_box_size = 3.25 * inch
+            qx = margin + 0.55 * inch
+            qy = (page_h - qr_box_size) / 2 - 0.10 * inch
+            draw_box(qx - 10, qy - 10, qr_box_size + 20, qr_box_size + 38, lw=1.0)
+            draw_image_contain(c, qr_back, qx, qy + 14, qr_box_size, qr_box_size)
+
+            c.setFont("Helvetica-Bold", 13)
+            c.drawCentredString(qx + qr_box_size / 2, qy - 2, "SCAN TO REGISTER THIS CAR")
+
+            # Right-side steps
+            steps_x = qx + qr_box_size + 0.60 * inch
+            steps_y = qy + qr_box_size - 2
+            steps_w = page_w - margin - steps_x
+            draw_box(steps_x, qy - 8, steps_w, qr_box_size + 32, lw=1.0)
+
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(steps_x + 12, steps_y, "Quick steps")
 
             c.setFont("Helvetica", 12)
-            c.drawString(
-                margin,
-                page_h - margin - 62,
-                "Scan to claim this car number, enter your info, sign the waiver, and complete registration.",
-            )
+            step_lines = [
+                "1. Scan the QR code.",
+                "2. Enter owner and vehicle information.",
+                "3. Sign the waiver electronically.",
+                "4. Complete registration payment if required.",
+                "5. Save your confirmation.",
+            ]
+            yy = steps_y - 26
+            for line in step_lines:
+                c.drawString(steps_x + 16, yy, line)
+                yy -= 24
 
-            claim_url = f"{base_url.rstrip('/')}/claim/{show['slug']}/{car_token}"
-            qr_back = make_qr(claim_url, box_size=12, border=2)
-
-            qr_size = 4.25 * inch
-            qx = (page_w - qr_size) / 2
-            qy = (page_h - qr_size) / 2 - 0.10 * inch
-            draw_image_contain(c, qr_back, qx, qy, qr_size, qr_size)
-
-            info_y = qy - 18
-            c.setFont("Helvetica-Bold", 11)
-            c.drawCentredString(page_w / 2, info_y, "SCAN TO REGISTER THIS CAR")
-
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(steps_x + 12, yy - 6, "What the form includes")
             c.setFont("Helvetica", 10)
-            c.drawCentredString(
-                page_w / 2,
-                info_y - 15,
-                "Includes vehicle info, contact info, future event opt-in, sponsor opt-in, and electronic waiver signature.",
-            )
+            detail_lines = [
+                "Vehicle info",
+                "Contact info",
+                "Future event opt-in",
+                "Sponsor opt-in",
+                "Electronic waiver signature",
+            ]
+            yy -= 24
+            for line in detail_lines:
+                c.drawString(steps_x + 18, yy, f"• {line}")
+                yy -= 16
 
-            c.setFont("Helvetica-Oblique", 9)
-            c.drawCentredString(page_w / 2, info_y - 31, claim_url)
+            # Footer disclosure
+            footer_box_y = margin
+            footer_box_h = 0.95 * inch
+            draw_box(margin, footer_box_y, page_w - 2 * margin, footer_box_h, lw=1.0)
 
-            footer_y = margin + 0.35 * inch
-            c.setFont("Helvetica", 10)
+            c.setFont("Helvetica", 9)
             c.drawString(
-                margin,
-                footer_y + 18,
+                margin + 10,
+                footer_box_y + 0.48 * inch,
                 "By opting in, you agree Karman Kar Shows & Events may contact you about this event and future events.",
             )
             c.drawString(
-                margin,
-                footer_y + 4,
+                margin + 10,
+                footer_box_y + 0.28 * inch,
                 "If selected, sponsor information may also be sent. Msg/data rates may apply. Opt out anytime.",
             )
+            c.setFont("Helvetica-Oblique", 8)
+            c.drawString(margin + 10, footer_box_y + 0.10 * inch, claim_url)
 
             if mirror_back_pages:
                 c.restoreState()
@@ -281,3 +461,51 @@ def build_landscape_cards_pdf(
     c.save()
     buf.seek(0)
     return buf.getvalue()
+```
+
+---
+
+## Tiny `app.py` change you also need
+
+Right now your sponsor add route collapses almost everything into `standard`, which prevents the new card from sizing sponsors by level.
+
+Find this block in `app.py`:
+
+```python
+if placement == "title":
+    set_title_sponsor(int(show["id"]), sponsor_id)
+else:
+    attach_sponsor_to_show(int(show["id"]), sponsor_id, placement="standard", sort_order=sort_order)
+```
+
+Replace it with this:
+
+```python
+allowed_placements = {"presenting", "title", "gold", "silver", "standard"}
+if placement not in allowed_placements:
+    placement = "standard"
+
+attach_sponsor_to_show(
+    int(show["id"]),
+    sponsor_id,
+    placement=placement,
+    sort_order=sort_order,
+)
+```
+
+That is important because your new print layout depends on real sponsor tiers.
+
+---
+
+## `admin_sponsors.html` also needs the placement options
+
+Wherever the sponsor placement dropdown is, use:
+
+```html
+<select name="placement">
+  <option value="presenting">Presenting Sponsor</option>
+  <option value="title">Title Sponsor</option>
+  <option value="gold">Gold Sponsor</option>
+  <option value="silver">Silver Sponsor</option>
+  <option value="standard">Standard</option>
+</select>
