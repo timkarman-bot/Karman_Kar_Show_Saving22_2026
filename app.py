@@ -1509,27 +1509,37 @@ def admin_sponsors_add():
     show = get_active_show()
     if not show:
         return "No active show.", 500
+
     name = request.form.get("name", "").strip()
     logo_path = request.form.get("logo_path", "").strip()
     website_url = request.form.get("website_url", "").strip()
-    placement = request.form.get("placement", "standard").strip()
+    placement = request.form.get("placement", "standard").strip().lower()
     sort_order_raw = request.form.get("sort_order", "100").strip()
+
     if not name:
         flash("Sponsor name is required.", "error")
         return redirect(url_for("admin_sponsors"))
+
     try:
         sort_order = int(sort_order_raw)
     except ValueError:
         sort_order = 100
+
+    allowed_placements = {"presenting", "title", "gold", "silver", "standard"}
+    if placement not in allowed_placements:
+        placement = "standard"
+
     sponsor_id = upsert_sponsor(name=name, logo_path=logo_path, website_url=website_url)
-    if placement == "title":
-        set_title_sponsor(int(show["id"]), sponsor_id)
-    else:
-        attach_sponsor_to_show(int(show["id"]), sponsor_id, placement="standard", sort_order=sort_order)
-    _log_event("admin.sponsor_saved", int(show["id"]), {"sponsor_id": sponsor_id, "name": name, "placement": placement}, actor_type="admin")
+
+    attach_sponsor_to_show(
+        int(show["id"]),
+        sponsor_id,
+        placement=placement,
+        sort_order=sort_order,
+    )
+
     flash("Sponsor saved.", "ok")
     return redirect(url_for("admin_sponsors"))
-
 
 @app.post("/admin/sponsors/remove")
 @require_admin
