@@ -20,7 +20,6 @@ CATEGORY_SLUGS: List[Tuple[str, str]] = [
     ("peoples-choice", "People’s Choice"),
 ]
 
-# QR generation safety
 VOTE_QR_BOX_SIZE = 8
 VOTE_QR_BORDER = 4
 REGISTER_QR_BOX_SIZE = 10
@@ -195,7 +194,6 @@ def build_landscape_cards_pdf(
         else:
             standard_imgs.append(img)
 
-    # fallback if no explicit presenting sponsor is found
     if not presenting_imgs:
         if title_sponsor:
             fallback_img = sponsor_logo_img(dict(title_sponsor))
@@ -218,9 +216,7 @@ def build_landscape_cards_pdf(
         vehicle_parts = [p for p in [year, make, model] if p and p.upper() != "TBD"]
         vehicle_text = " ".join(vehicle_parts) if vehicle_parts else "_________________________________________"
 
-        # =========================================================
-        # FRONT PAGE
-        # =========================================================
+        # FRONT
         c.setTitle(f"{show.get('title', 'Voting Cards')} - Car #{car_number}")
 
         header_h = 1.45 * inch
@@ -263,7 +259,6 @@ def build_landscape_cards_pdf(
         gap = 0.16 * inch
         right_w = total_w - left_w - gap
 
-        # Left info panel
         draw_box(margin, body_y, left_w, body_h, lw=1.0)
         c.setFont("Helvetica-Bold", 14)
         c.drawString(margin + 10, body_y + body_h - 22, "VEHICLE INFO")
@@ -285,7 +280,8 @@ def build_landscape_cards_pdf(
             "1. Scan a code on the right.",
             "2. Choose the number of votes.",
             "3. Complete payment.",
-            "$1 per vote unless changed by the event.",
+            "$1 per vote unless",
+            "changed by the event.",
         ]
         yy = body_y + body_h - 162
         for line in info_lines:
@@ -293,7 +289,7 @@ def build_landscape_cards_pdf(
             yy -= 14
 
         c.setFont("Helvetica-Bold", 11)
-        c.drawString(margin + 10, body_y + 84, "Branch awards")
+        c.drawString(margin + 10, body_y + 92, "Branch awards")
 
         c.setFont("Helvetica", 8.5)
         branch_lines = [
@@ -303,12 +299,11 @@ def build_landscape_cards_pdf(
             "in memory of a veteran.",
             "People's Choice is open to everyone.",
         ]
-        yy = body_y + 68
+        yy = body_y + 76
         for line in branch_lines:
             c.drawString(margin + 12, yy, line)
             yy -= 10
 
-        # Right QR panel
         qr_x = margin + left_w + gap
         qr_y = body_y
         qr_h = body_h
@@ -326,7 +321,6 @@ def build_landscape_cards_pdf(
         cell_w = (right_w - (inner_pad_x * 2)) / cols
         cell_h = (qr_h - top_reserved - (inner_pad_y * 2)) / rows
 
-        # 7 QR codes + 1 instruction slot
         grid_items: List[Tuple[str, str]] = CATEGORY_SLUGS + [("", "INFO")]
 
         for i in range(cols * rows):
@@ -369,7 +363,6 @@ def build_landscape_cards_pdf(
                 c.drawCentredString(x0 + cell_w / 2, y0 + cell_h - 88, "this")
                 c.drawCentredString(x0 + cell_w / 2, y0 + cell_h - 102, "vehicle")
 
-        # Front sponsor bands: Title + Gold only
         sponsor_band_h = 1.20 * inch
         sponsor_band_y = margin
         draw_box(margin, sponsor_band_y, page_w - 2 * margin, sponsor_band_h, lw=1.0)
@@ -411,9 +404,7 @@ def build_landscape_cards_pdf(
 
         c.showPage()
 
-        # =========================================================
-        # BACK PAGE
-        # =========================================================
+        # BACK
         if include_back:
             if mirror_back_pages:
                 c.saveState()
