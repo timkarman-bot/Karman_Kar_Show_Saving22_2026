@@ -153,9 +153,11 @@ def build_landscape_cards_pdf(
         items = logo_imgs[:max_items]
         if not items:
             return
+
         gap = 8
         count = len(items)
         cell_w = (w - gap * (count - 1)) / count if count else w
+
         for i, img in enumerate(items):
             draw_image_contain(c, img, x + i * (cell_w + gap), y, cell_w, h)
 
@@ -194,15 +196,14 @@ def build_landscape_cards_pdf(
 
     # fallback if old data still uses title_sponsor slot as the hero logo
     if not presenting_imgs:
+        if title_sponsor:
+            fallback_img = sponsor_logo_img(dict(title_sponsor))
+            if fallback_img:
+                presenting_imgs = [fallback_img]
 
-    if title_sponsor:
-        fallback_img = sponsor_logo_img(dict(title_sponsor))
-        if fallback_img:
-            presenting_imgs = [fallback_img]
+        if not presenting_imgs and sponsor_with_imgs:
+            presenting_imgs = [sponsor_with_imgs[0][1]]
 
-if not presenting_imgs and sponsor_with_imgs:
-    presenting_imgs = [sponsor_with_imgs[0][1]]
-    
     margin = 0.50 * inch
 
     for r in cars_rows:
@@ -221,7 +222,6 @@ if not presenting_imgs and sponsor_with_imgs:
         # =========================================================
         c.setTitle(f"{show.get('title', 'Voting Cards')} - Car #{car_number}")
 
-        # Header
         header_h = 1.45 * inch
         header_y = page_h - margin - header_h
         draw_box(margin, header_y, page_w - 2 * margin, header_h, lw=1.2)
@@ -230,18 +230,18 @@ if not presenting_imgs and sponsor_with_imgs:
             draw_image_contain(c, brand_logo, margin + 8, header_y + 10, 1.40 * inch, header_h - 20)
 
         if presenting_imgs:
+            c.setFont("Helvetica-Bold", 11)
+            c.drawCentredString(page_w / 2, page_h - margin - 12, "PRESENTED BY")
 
-    c.setFont("Helvetica-Bold", 11)
-    c.drawCentredString(page_w / 2, page_h - margin - 12, "PRESENTED BY")
+            draw_image_contain(
+                c,
+                presenting_imgs[0],
+                (page_w / 2) - 1.95 * inch,
+                header_y + 0.36 * inch,
+                3.90 * inch,
+                0.72 * inch,
+            )
 
-    draw_image_contain(
-        c,
-        presenting_imgs[0],
-        (page_w / 2) - 1.95 * inch,
-        header_y + 0.36 * inch,
-        3.90 * inch,
-        0.72 * inch,
-    )
         c.setFont("Helvetica-Bold", 24)
         c.drawRightString(page_w - margin - 10, header_y + 0.78 * inch, f"CAR #{car_number}")
         c.setFont("Helvetica-Bold", 12)
@@ -249,7 +249,6 @@ if not presenting_imgs and sponsor_with_imgs:
         c.setFont("Helvetica", 10)
         c.drawRightString(page_w - margin - 10, header_y + 0.34 * inch, str(show.get("title") or ""))
 
-        # Main body
         body_y = margin + 1.55 * inch
         body_h = 4.55 * inch
         total_w = page_w - 2 * margin
@@ -287,24 +286,21 @@ if not presenting_imgs and sponsor_with_imgs:
             yy -= 14
 
         c.setFont("Helvetica-Bold", 11)
-c.drawString(margin + 10, body_y + 84, "Branch awards")
+        c.drawString(margin + 10, body_y + 84, "Branch awards")
 
-c.setFont("Helvetica", 8.5)
+        c.setFont("Helvetica", 8.5)
+        branch_lines = [
+            "Army, Navy, Air Force, Marines,",
+            "Coast Guard, and Space Force are for",
+            "veterans, active military, or",
+            "in memory of a veteran.",
+            "People's Choice is open to everyone.",
+        ]
+        yy = body_y + 68
+        for line in branch_lines:
+            c.drawString(margin + 12, yy, line)
+            yy -= 10
 
-branch_lines = [
-    "Army, Navy, Air Force, Marines,",
-    "Coast Guard, and Space Force are for",
-    "veterans, active military, or",
-    "in memory of a veteran.",
-    "People's Choice is open to everyone.",
-]
-
-yy = body_y + 68
-
-for line in branch_lines:
-    c.drawString(margin + 12, yy, line)
-    yy -= 10
-    
         # Right QR panel
         qr_x = margin + left_w + gap
         qr_y = body_y
@@ -338,7 +334,6 @@ for line in branch_lines:
                 vote_url = f"{base_url.rstrip('/')}/v/{show['slug']}/{car_token}/{slug}"
                 qr_img = make_qr(vote_url, box_size=VOTE_QR_BOX_SIZE, border=VOTE_QR_BORDER)
 
-                # force square box, consistent size, white backing for scan reliability
                 qr_box = min(cell_w - 16, cell_h - 30)
                 qr_draw_x = x0 + (cell_w - qr_box) / 2
                 qr_draw_y = y0 + 22
@@ -354,7 +349,6 @@ for line in branch_lines:
                 c.drawCentredString(x0 + cell_w / 2, y0 + 8, label)
 
             else:
-                # instruction slot
                 c.saveState()
                 c.setFillColor(colors.whitesmoke)
                 c.rect(x0 + 8, y0 + 10, cell_w - 16, cell_h - 20, stroke=0, fill=1)
@@ -376,9 +370,12 @@ for line in branch_lines:
         left_band_w = (page_w - 2 * margin - 8) / 2
         right_band_w = left_band_w
 
-        # Title sponsors
         c.setFont("Helvetica-Bold", 11)
-        c.drawCentredString(margin + left_band_w / 2, sponsor_band_y + sponsor_band_h - 14, "TITLE SPONSORS")
+        c.drawCentredString(
+            margin + left_band_w / 2,
+            sponsor_band_y + sponsor_band_h - 14,
+            "TITLE SPONSORS",
+        )
         if title_imgs:
             draw_logo_row(
                 title_imgs,
@@ -389,9 +386,12 @@ for line in branch_lines:
                 max_items=2,
             )
 
-        # Gold sponsors
         c.setFont("Helvetica-Bold", 11)
-        c.drawCentredString(margin + left_band_w + 8 + right_band_w / 2, sponsor_band_y + sponsor_band_h - 14, "GOLD SPONSORS")
+        c.drawCentredString(
+            margin + left_band_w + 8 + right_band_w / 2,
+            sponsor_band_y + sponsor_band_h - 14,
+            "GOLD SPONSORS",
+        )
         if gold_imgs:
             draw_logo_row(
                 gold_imgs,
@@ -418,21 +418,20 @@ for line in branch_lines:
             draw_box(margin, back_header_y, page_w - 2 * margin, back_header_h, lw=1.2)
 
             if presenting_imgs:
+                c.setFont("Helvetica-Bold", 10)
+                c.drawCentredString(page_w / 2, page_h - margin - 10, "PRESENTED BY")
 
-    c.setFont("Helvetica-Bold", 10)
-    c.drawCentredString(page_w / 2, page_h - margin - 10, "PRESENTED BY")
-
-    draw_image_contain(
-        c,
-        presenting_imgs[0],
-        (page_w / 2) - 1.85 * inch,
-        back_header_y + 0.14 * inch,
-        3.70 * inch,
-        0.50 * inch,
-    )
+                draw_image_contain(
+                    c,
+                    presenting_imgs[0],
+                    (page_w / 2) - 1.85 * inch,
+                    back_header_y + 0.14 * inch,
+                    3.70 * inch,
+                    0.50 * inch,
+                )
 
             c.setFont("Helvetica-Bold", 24)
-            c.drawRightString(page_w - margin - 10, back_header_y + 0.58 * inch, f"REGISTER THIS CAR")
+            c.drawRightString(page_w - margin - 10, back_header_y + 0.58 * inch, "REGISTER THIS CAR")
             c.setFont("Helvetica", 11)
             c.drawRightString(
                 page_w - margin - 10,
@@ -479,22 +478,36 @@ for line in branch_lines:
                 yy -= 24
 
             c.setFont("Helvetica-Bold", 11)
-            c.drawString(steps_x + 12, yy - 4, "This event is made possible by the generous support of:")
+            c.drawString(
+                steps_x + 12,
+                yy - 4,
+                "This event is made possible by the generous support of:",
+            )
             yy -= 24
 
-            # back sponsor footer area
             sponsors_y = margin
             sponsors_h = 1.85 * inch
             draw_box(margin, sponsors_y, page_w - 2 * margin, sponsors_h, lw=1.0)
 
-            # Silver sponsors row
             c.saveState()
             c.setFillColor(colors.HexColor("#1f4e79"))
-            c.rect(margin, sponsors_y + sponsors_h - 0.34 * inch, page_w - 2 * margin, 0.34 * inch, stroke=0, fill=1)
+            c.rect(
+                margin,
+                sponsors_y + sponsors_h - 0.34 * inch,
+                page_w - 2 * margin,
+                0.34 * inch,
+                stroke=0,
+                fill=1,
+            )
             c.restoreState()
+
             c.setFillColor(colors.white)
             c.setFont("Helvetica-Bold", 11)
-            c.drawCentredString(page_w / 2, sponsors_y + sponsors_h - 0.23 * inch, "THANK YOU TO OUR EVENT SPONSORS")
+            c.drawCentredString(
+                page_w / 2,
+                sponsors_y + sponsors_h - 0.23 * inch,
+                "THANK YOU TO OUR EVENT SPONSORS",
+            )
             c.setFillColor(colors.black)
 
             if silver_imgs:
@@ -507,7 +520,6 @@ for line in branch_lines:
                     max_items=6,
                 )
 
-            # Standard / overflow row
             c.setFont("Helvetica-Bold", 10)
             c.drawString(margin + 10, sponsors_y + 0.56 * inch, "COMMUNITY / SUPPORTING SPONSORS")
             if standard_imgs:
@@ -520,7 +532,6 @@ for line in branch_lines:
                     max_items=8,
                 )
 
-            # disclosure
             c.setFont("Helvetica", 8)
             c.drawString(
                 margin + 10,
