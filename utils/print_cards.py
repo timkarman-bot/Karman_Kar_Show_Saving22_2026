@@ -150,6 +150,7 @@ def build_landscape_cards_pdf(
     ) -> None:
         if not logo_imgs:
             return
+
         items = logo_imgs[:max_items]
         if not items:
             return
@@ -194,7 +195,7 @@ def build_landscape_cards_pdf(
         else:
             standard_imgs.append(img)
 
-    # fallback if old data still uses title_sponsor slot as the hero logo
+    # fallback if no explicit presenting sponsor is found
     if not presenting_imgs:
         if title_sponsor:
             fallback_img = sponsor_logo_img(dict(title_sponsor))
@@ -227,12 +228,18 @@ def build_landscape_cards_pdf(
         draw_box(margin, header_y, page_w - 2 * margin, header_h, lw=1.2)
 
         if brand_logo:
-            draw_image_contain(c, brand_logo, margin + 8, header_y + 10, 1.40 * inch, header_h - 20)
+            draw_image_contain(
+                c,
+                brand_logo,
+                margin + 6,
+                header_y + 6,
+                1.65 * inch,
+                header_h - 12,
+            )
 
         if presenting_imgs:
             c.setFont("Helvetica-Bold", 11)
             c.drawCentredString(page_w / 2, page_h - margin - 12, "PRESENTED BY")
-
             draw_image_contain(
                 c,
                 presenting_imgs[0],
@@ -249,8 +256,8 @@ def build_landscape_cards_pdf(
         c.setFont("Helvetica", 10)
         c.drawRightString(page_w - margin - 10, header_y + 0.34 * inch, str(show.get("title") or ""))
 
-        body_y = margin + 1.55 * inch
-        body_h = 4.55 * inch
+        body_y = margin + 1.25 * inch
+        body_h = 4.85 * inch
         total_w = page_w - 2 * margin
         left_w = 2.45 * inch
         gap = 0.16 * inch
@@ -363,7 +370,7 @@ def build_landscape_cards_pdf(
                 c.drawCentredString(x0 + cell_w / 2, y0 + cell_h - 102, "vehicle")
 
         # Front sponsor bands: Title + Gold only
-        sponsor_band_h = 1.55 * inch
+        sponsor_band_h = 1.20 * inch
         sponsor_band_y = margin
         draw_box(margin, sponsor_band_y, page_w - 2 * margin, sponsor_band_h, lw=1.0)
 
@@ -380,9 +387,9 @@ def build_landscape_cards_pdf(
             draw_logo_row(
                 title_imgs,
                 margin + 10,
-                sponsor_band_y + 0.34 * inch,
+                sponsor_band_y + 0.28 * inch,
                 left_band_w - 20,
-                0.62 * inch,
+                0.42 * inch,
                 max_items=2,
             )
 
@@ -396,9 +403,9 @@ def build_landscape_cards_pdf(
             draw_logo_row(
                 gold_imgs,
                 margin + left_band_w + 18,
-                sponsor_band_y + 0.28 * inch,
+                sponsor_band_y + 0.24 * inch,
                 right_band_w - 20,
-                0.64 * inch,
+                0.46 * inch,
                 max_items=4,
             )
 
@@ -420,7 +427,6 @@ def build_landscape_cards_pdf(
             if presenting_imgs:
                 c.setFont("Helvetica-Bold", 10)
                 c.drawCentredString(page_w / 2, page_h - margin - 10, "PRESENTED BY")
-
                 draw_image_contain(
                     c,
                     presenting_imgs[0],
@@ -444,7 +450,7 @@ def build_landscape_cards_pdf(
 
             qr_box_size = 2.60 * inch
             qx = margin + 0.40 * inch
-            qy = page_h - margin - back_header_h - qr_box_size - 0.55 * inch
+            qy = page_h - margin - back_header_h - qr_box_size - 0.40 * inch
             draw_box(qx - 8, qy - 8, qr_box_size + 16, qr_box_size + 34, lw=1.0)
 
             c.saveState()
@@ -483,10 +489,9 @@ def build_landscape_cards_pdf(
                 yy - 4,
                 "This event is made possible by the generous support of:",
             )
-            yy -= 24
 
-            sponsors_y = margin
-            sponsors_h = 1.85 * inch
+            sponsors_y = margin + 0.08 * inch
+            sponsors_h = 1.55 * inch
             draw_box(margin, sponsors_y, page_w - 2 * margin, sponsors_h, lw=1.0)
 
             c.saveState()
@@ -514,33 +519,42 @@ def build_landscape_cards_pdf(
                 draw_logo_row(
                     silver_imgs,
                     margin + 10,
-                    sponsors_y + 0.86 * inch,
+                    sponsors_y + 0.72 * inch,
                     page_w - 2 * margin - 20,
-                    0.34 * inch,
+                    0.28 * inch,
                     max_items=6,
                 )
 
             c.setFont("Helvetica-Bold", 10)
-            c.drawString(margin + 10, sponsors_y + 0.56 * inch, "COMMUNITY / SUPPORTING SPONSORS")
+            c.drawString(margin + 10, sponsors_y + 0.44 * inch, "COMMUNITY / SUPPORTING SPONSORS")
             if standard_imgs:
                 draw_logo_row(
                     standard_imgs,
                     margin + 10,
-                    sponsors_y + 0.12 * inch,
+                    sponsors_y + 0.08 * inch,
                     page_w - 2 * margin - 20,
-                    0.26 * inch,
+                    0.22 * inch,
                     max_items=8,
                 )
 
-            c.setFont("Helvetica", 8)
+            footer_note_y = margin - 0.02 * inch
+            draw_box(
+                margin,
+                footer_note_y,
+                page_w - 2 * margin,
+                0.32 * inch,
+                lw=0.8,
+            )
+
+            c.setFont("Helvetica", 7.5)
             c.drawString(
-                margin + 10,
-                sponsors_y - 0.18 * inch + 12,
+                margin + 8,
+                footer_note_y + 0.18 * inch,
                 "By opting in, you agree Karman Kar Shows & Events may contact you about this event and future events.",
             )
             c.drawString(
-                margin + 10,
-                sponsors_y - 0.18 * inch,
+                margin + 8,
+                footer_note_y + 0.06 * inch,
                 "If selected, sponsor information may also be sent. Msg/data rates may apply. Opt out anytime.",
             )
 
