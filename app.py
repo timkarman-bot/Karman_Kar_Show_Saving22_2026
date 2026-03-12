@@ -1,39 +1,3 @@
-#Here is the **complete replacement `app.py`** that matches the new `database.py` and the new templates we have been building toward.
-
-#It is designed to compile with:
-
-#* the **new `database.py`**
-#* the new `admin.html`
-#* the new `register.html`
-#* the new `register_checkout.html`
-#* the new `register_success.html`
-#* the updated `vote_qty.html`
-
-#It also supports:
-
-#* **charity-owned Stripe Connect**
-#* **webhook confirmation**
-#* **registration checkout**
-#* **voting checkout**
-#* **attendance fee checkout**
-#* **electronic waiver capture**
-#* **admin pricing**
-#* **charity connect / disconnect routes**
-
-#A few honest notes before the file:
-
-#1. This will compile as Python if your `database.py` matches the version I gave you.
-#2. It assumes you will have an `attendee_fee.html` template after you rename/update that file.
-#3. It keeps a few compatibility routes so older links do not instantly break.
-#4. For Stripe Connect, set these environment variables:
-
-#   * `PLATFORM_STRIPE_SECRET_KEY`
-#   * `STRIPE_WEBHOOK_SECRET`
-#   * `STRIPE_CLIENT_ID`
-#   * `BASE_URL`
-#   * `FLASK_SECRET`
-#   * `ADMIN_PASSWORD`
-
 python
 # app.py
 # Karman Kar Shows & Events — charity-owned Stripe Connect checkout + webhook confirmation

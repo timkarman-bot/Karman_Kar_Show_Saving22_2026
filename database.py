@@ -1,4 +1,4 @@
-# database.py
+#database.py
 import os
 import sqlite3
 import secrets
@@ -1851,33 +1851,3 @@ def build_snapshot_zip_bytes(show_id: int):
 
     mem.seek(0)
     return mem.getvalue(), zip_name
-
-
-## What changed in this file
-
-#This new database.py adds the core data model you need for the charity-owned workflow:
-
-#* shows
-
-#  * registration_fee_cents
-# * attendee_fee_cents
-#  * vote_price_cents
-#  * charity_stripe_account_id
-#  * charity_connect_status
-#  * charity_connected_at
-#  * waiver_text
-#  * waiver_version
-
-# * registration_intents
-
-#  * stores pending registration before payment completes
-#  * includes waiver acceptance and typed signature
- # * finalizes into people + show_cars only after webhook confirmation
-
-# * vote_intents
-
-  # * stores pending vote checkout before webhook finalization
-
-# * processed_webhook_events
-
-#  * prevents duplicate webhook processing
