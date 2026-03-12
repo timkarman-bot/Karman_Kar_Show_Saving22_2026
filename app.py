@@ -1338,7 +1338,7 @@ def admin_print_cards_pdf():
         title_sponsor=title_sponsor,
         sponsors=sponsors,
         include_back=include_back,
-        mirror_back_pages=True,
+        mirror_back_pages=False,
     )
 
     _log_event(
