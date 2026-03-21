@@ -435,6 +435,11 @@ def init_db() -> None:
         """
     )
 
+    try:
+        cur.execute("ALTER TABLE event_interest_signups ADD COLUMN show_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
+
     for sql in [
         "CREATE INDEX IF NOT EXISTS idx_shows_active ON shows(is_active)",
         "CREATE INDEX IF NOT EXISTS idx_shows_status ON shows(status)",
@@ -453,31 +458,27 @@ def init_db() -> None:
     ]:
         cur.execute(sql)
 
-    # PATCH: ensure show_id exists on older DBs
-    try:
-        cur.execute("ALTER TABLE event_interest_signups ADD COLUMN show_id INTEGER")
-    except Exception:
-        pass
-
     conn.commit()
     conn.close()
-
 # SHOWS
 
 def ensure_default_show(default_show: Dict[str, Any]) -> None:
     conn = _conn()
     cur = conn.cursor()
+
     cur.execute("SELECT id FROM shows WHERE slug = ?", (default_show["slug"],))
     row = cur.fetchone()
+
     if not row:
         cur.execute(
             """
-INSERT INTO shows (
-    slug, title, date, time, location_name, address, benefiting,
-    suggested_donation, description, status, short_details, qr_message,
-    cta_label, cta_url, show_on_site, sort_order, hide_address, voting_open, is_active
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+            INSERT INTO shows (
+                slug, title, date, time, location_name, address,
+                benefiting, suggested_donation, description,
+                status, short_details, qr_message, cta_label, cta_url,
+                show_on_site, sort_order, hide_address, voting_open, is_active
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', '', '', '', 1, 100, 0, 0, 0)
             """,
             (
                 default_show["slug"],
@@ -496,11 +497,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
     active = cur.fetchone()
     if not active:
         cur.execute("UPDATE shows SET is_active = 0")
-        cur.execute("UPDATE shows SET is_active = 1, status = 'active' WHERE slug = ?", (default_show["slug"],))
+        cur.execute(
+            "UPDATE shows SET is_active = 1, status = 'active' WHERE slug = ?",
+            (default_show["slug"],),
+        )
 
     conn.commit()
     conn.close()
-
 
 def get_active_show() -> Optional[sqlite3.Row]:
     conn = _conn()
@@ -1785,10 +1788,9 @@ def save_upcoming_event(
                 short_details = ?,
                 qr_message = ?,
                 show_on_site = ?,
-                sort_order = ?,
-                hide_address = ?,
-                status = 'upcoming',
-                sort_order = 0
+                sort_order = 0,
+                hide_address = 0,
+                status = 'upcoming'
             WHERE id = ?
             """,
             (
@@ -1812,9 +1814,9 @@ def save_upcoming_event(
             """
             INSERT INTO shows (
                 slug, title, date, description, short_details, qr_message,
-                status, show_on_site, sort_order, voting_open, is_active
+                status, show_on_site, sort_order, hide_address, voting_open, is_active
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'upcoming', ?, 0, 0, 0)
+            VALUES (?, ?, ?, ?, ?, ?, 'upcoming', ?, 0, 0, 0, 0)
             """,
             (
                 candidate_slug,
@@ -1829,46 +1831,8 @@ def save_upcoming_event(
 
     conn.commit()
     conn.close()
-
-
-def create_event_interest_signup(
-    *,
-    show_id: Optional[int] = None,
-    first_name: str,
-    last_name: str,
-    email: str,
-    phone: str,
-    wants_email: bool,
-    wants_text: bool,
-    source: str = "",
-) -> int:
-    if show_id is None:
-        row = get_next_upcoming_show()
-        show_id = int(row["id"]) if row else None
-
-    conn = _conn()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO event_interest_signups (
-            show_id, first_name, last_name, email, phone,
-            wants_email, wants_text, source
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            show_id,
-            (first_name or "").strip(),
-            (last_name or "").strip(),
-            (email or "").strip(),
-            (phone or "").strip(),
-            _b(wants_email),
-            _b(wants_text),
-            (source or "").strip(),
-        ),
-    )
     
-def list_event_interest_signups(show_id: Optional[int] = None) -> List[sqlite3.Row]:
+    def list_event_interest_signups(show_id: Optional[int] = None) -> List[sqlite3.Row]:
     conn = _conn()
     if show_id is None:
         rows = conn.execute(
@@ -1932,11 +1896,49 @@ def export_event_interest_signups_csv(show_id: Optional[int] = None) -> bytes:
             r["source"],
         ])
     return buf.getvalue().encode("utf-8")
+    
+    
+
+def create_event_interest_signup(
+    *,
+    show_id: Optional[int] = None,
+    first_name: str,
+    last_name: str,
+    email: str,
+    phone: str,
+    wants_email: bool,
+    wants_text: bool,
+    source: str = "",
+) -> int:
+    if show_id is None:
+        row = get_next_upcoming_show()
+        show_id = int(row["id"]) if row else None
+
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO event_interest_signups (
+            show_id, first_name, last_name, email, phone,
+            wants_email, wants_text, source
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            show_id,
+            (first_name or "").strip(),
+            (last_name or "").strip(),
+            (email or "").strip(),
+            (phone or "").strip(),
+            _b(wants_email),
+            _b(wants_text),
+            (source or "").strip(),
+        ),
+    )
     conn.commit()
     rid = int(cur.lastrowid)
     conn.close()
     return rid
-
 
 # SNAPSHOT EXPORT
 
