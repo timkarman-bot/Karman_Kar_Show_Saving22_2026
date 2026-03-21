@@ -416,9 +416,9 @@ def init_db() -> None:
     ]:
         cur.execute(sql)
      
-            # UPCOMING EVENT (single record)
+              # UPCOMING EVENT (single record)
     cur.execute(
-        
+        """
         CREATE TABLE IF NOT EXISTS upcoming_event (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             title TEXT,
@@ -434,6 +434,7 @@ def init_db() -> None:
         )
         """
     )
+    
 
     # EVENT INTEREST SIGNUPS
     cur.execute(
