@@ -429,12 +429,8 @@ def init_db() -> None:
         )
         """
     )
-
-    try:
-        cur.execute("ALTER TABLE event_interest_signups ADD COLUMN show_id INTEGER")
-    except sqlite3.OperationalError:
-        pass
-
+# REMOVED
+   
     for sql in [
         "CREATE INDEX IF NOT EXISTS idx_shows_active ON shows(is_active)",
         "CREATE INDEX IF NOT EXISTS idx_shows_status ON shows(status)",
