@@ -1427,6 +1427,7 @@ def admin_shows_update(show_id: int):
         cta_url=request.form.get("cta_url", "").strip(),
         show_on_site=1 if request.form.get("show_on_site") == "on" else 0,
         sort_order=int(request.form.get("sort_order", "100") or "100"),
+        hide_address=1 if request.form.get("hide_address") == "on" else 0,
       )
     hide_address=1 if request.form.get("hide_address") == "on" else 0,
     flash("Show updated.", "ok")
@@ -1583,6 +1584,41 @@ def admin_reset_votes():
     reset_votes_for_show(int(show["id"]))
     _log_event("admin.votes_reset", int(show["id"]), {"backup_filename": filename}, actor_type="admin")
     return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+
+@app.get("/admin/leads")
+@require_admin
+def admin_leads():
+    show_id_raw = request.args.get("show_id", "").strip()
+    selected_show_id = None
+    if show_id_raw.isdigit():
+        selected_show_id = int(show_id_raw)
+
+    leads = list_event_interest_signups(selected_show_id)
+    shows = list_shows_admin()
+
+    return render_template(
+        "admin_leads.html",
+        show=get_active_show(),
+        shows=shows,
+        leads=leads,
+        selected_show_id=selected_show_id,
+    )
+
+
+@app.get("/admin/leads/export.csv")
+@require_admin
+def admin_leads_export():
+    show_id_raw = request.args.get("show_id", "").strip()
+    selected_show_id = int(show_id_raw) if show_id_raw.isdigit() else None
+    csv_bytes = export_event_interest_signups_csv(selected_show_id)
+
+    filename = "event-leads.csv" if selected_show_id is None else f"event-leads-show-{selected_show_id}.csv"
+    return send_file(
+        io.BytesIO(csv_bytes),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.get("/admin/leaderboard")

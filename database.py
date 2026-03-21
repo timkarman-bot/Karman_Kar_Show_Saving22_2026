@@ -621,7 +621,6 @@ def create_show_admin(
     conn.close()
     return rid
 
-
 def update_show_admin_record(
     show_id: int,
     *,
@@ -650,7 +649,7 @@ def update_show_admin_record(
         SET slug = ?, title = ?, date = ?, time = ?, location_name = ?, address = ?,
             benefiting = ?, suggested_donation = ?, description = ?, status = ?,
             short_details = ?, qr_message = ?, cta_label = ?, cta_url = ?,
-            show_on_site = ?, sort_order = ?
+            show_on_site = ?, sort_order = ?, hide_address = ?
         WHERE id = ?
         """,
         (
@@ -676,7 +675,6 @@ def update_show_admin_record(
     )
     conn.commit()
     conn.close()
-
 
 def set_active_show(show_id: int) -> None:
     conn = _conn()
@@ -1873,6 +1871,71 @@ def create_event_interest_signup(
             (source or "").strip(),
         ),
     )
+    
+def list_event_interest_signups(show_id: Optional[int] = None) -> List[sqlite3.Row]:
+    conn = _conn()
+    if show_id is None:
+        rows = conn.execute(
+            """
+            SELECT
+                eis.*,
+                s.title AS show_title,
+                s.slug AS show_slug
+            FROM event_interest_signups eis
+            LEFT JOIN shows s ON s.id = eis.show_id
+            ORDER BY eis.created_at DESC, eis.id DESC
+            """
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT
+                eis.*,
+                s.title AS show_title,
+                s.slug AS show_slug
+            FROM event_interest_signups eis
+            LEFT JOIN shows s ON s.id = eis.show_id
+            WHERE eis.show_id = ?
+            ORDER BY eis.created_at DESC, eis.id DESC
+            """,
+            (show_id,),
+        ).fetchall()
+    conn.close()
+    return rows
+
+
+def export_event_interest_signups_csv(show_id: Optional[int] = None) -> bytes:
+    rows = list_event_interest_signups(show_id)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow([
+        "created_at",
+        "show_id",
+        "show_title",
+        "show_slug",
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "wants_email",
+        "wants_text",
+        "source",
+    ])
+    for r in rows:
+        w.writerow([
+            r["created_at"],
+            r["show_id"],
+            r["show_title"],
+            r["show_slug"],
+            r["first_name"],
+            r["last_name"],
+            r["email"],
+            r["phone"],
+            r["wants_email"],
+            r["wants_text"],
+            r["source"],
+        ])
+    return buf.getvalue().encode("utf-8")
     conn.commit()
     rid = int(cur.lastrowid)
     conn.close()

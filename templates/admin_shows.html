@@ -1,224 +1,35 @@
-{% extends "base.html" %}
-{% set title = "Manage Shows • Karman Kar Shows & Events" %}
+@app.get("/admin/leads")
+@require_admin
+def admin_leads():
+    show_id_raw = request.args.get("show_id", "").strip()
+    selected_show_id = None
+    if show_id_raw.isdigit():
+        selected_show_id = int(show_id_raw)
 
-{% block content %}
-<div class="space-y-6">
-  <div class="flex items-center justify-between gap-4">
-    <div>
-      <div class="text-xs font-semibold text-slate-500">ADMIN</div>
-      <h1 class="mt-1 text-3xl font-semibold tracking-tight">Manage Shows</h1>
-      <div class="mt-1 text-sm text-slate-600">
-        Create, edit, duplicate, and manage active, upcoming, and past shows.
-      </div>
-    </div>
+    leads = list_event_interest_signups(selected_show_id)
+    shows = list_shows_admin()
 
-    <div class="flex flex-wrap gap-2">
-      <a href="{{ url_for('admin_page') }}" class="btn btn-outline">Back to Admin</a>
-      <a href="{{ url_for('events') }}" target="_blank" class="btn btn-outline">Open Upcoming Page</a>
-    </div>
-  </div>
+    return render_template(
+        "admin_leads.html",
+        show=get_active_show(),
+        shows=shows,
+        leads=leads,
+        selected_show_id=selected_show_id,
+    )
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      <div class="space-y-2">
-        {% for category, message in messages %}
-          <div class="rounded-xl px-4 py-3 text-sm
-            {% if category == 'error' %}
-              bg-red-50 text-red-700 border border-red-200
-            {% else %}
-              bg-emerald-50 text-emerald-700 border border-emerald-200
-            {% endif %}
-          ">
-            {{ message }}
-          </div>
-        {% endfor %}
-      </div>
-    {% endif %}
-  {% endwith %}
 
-  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
-    <div class="text-lg font-semibold">Create New Show</div>
+@app.get("/admin/leads/export.csv")
+@require_admin
+def admin_leads_export():
+    show_id_raw = request.args.get("show_id", "").strip()
+    selected_show_id = int(show_id_raw) if show_id_raw.isdigit() else None
+    csv_bytes = export_event_interest_signups_csv(selected_show_id)
 
-    <form method="POST" action="{{ url_for('admin_shows_create') }}" class="mt-4 grid gap-4">
-      <div class="grid gap-4 md:grid-cols-2">
-        <input name="title" placeholder="Title" class="rounded-2xl border border-slate-200 px-4 py-3" required>
-        <input name="slug" placeholder="slug-like-this" class="rounded-2xl border border-slate-200 px-4 py-3" required>
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-2">
-        <input name="date" placeholder="Date display" class="rounded-2xl border border-slate-200 px-4 py-3">
-        <input name="time" placeholder="Time" class="rounded-2xl border border-slate-200 px-4 py-3">
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-2">
-        <input name="location_name" placeholder="Location name" class="rounded-2xl border border-slate-200 px-4 py-3">
-        <input name="address" placeholder="Address" class="rounded-2xl border border-slate-200 px-4 py-3">
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-2">
-        <input name="benefiting" placeholder="Benefiting / charity" class="rounded-2xl border border-slate-200 px-4 py-3">
-        <input name="suggested_donation" placeholder="Suggested donation" class="rounded-2xl border border-slate-200 px-4 py-3">
-      </div>
-
-      <input name="short_details" placeholder="Short details line" class="rounded-2xl border border-slate-200 px-4 py-3">
-
-      <textarea name="description" rows="3" placeholder="Description" class="rounded-2xl border border-slate-200 px-4 py-3"></textarea>
-      <textarea name="qr_message" rows="2" placeholder="QR / landing page message" class="rounded-2xl border border-slate-200 px-4 py-3"></textarea>
-
-      <div class="grid gap-4 md:grid-cols-3">
-        <input name="cta_label" placeholder="CTA label" class="rounded-2xl border border-slate-200 px-4 py-3">
-        <input name="cta_url" placeholder="/show/your-slug or external URL" class="rounded-2xl border border-slate-200 px-4 py-3">
-        <input name="sort_order" value="100" class="rounded-2xl border border-slate-200 px-4 py-3">
-      </div>
-
-      <div class="grid gap-4 md:grid-cols-3">
-        <select name="status" class="rounded-2xl border border-slate-200 px-4 py-3">
-          <option value="upcoming" selected>Upcoming</option>
-          <option value="draft">Draft</option>
-          <option value="active">Active</option>
-          <option value="past">Past</option>
-        </select>
-
-        <label class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-          <input type="checkbox" name="show_on_site" checked>
-          <span>Show on site</span>
-        </label>
-
-        <label class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-          <input type="checkbox" name="hide_address">
-          <span>Hide address</span>
-        </label>
-      </div>
-
-      <button class="btn btn-primary" type="submit">Create Show</button>
-    </form>
-  </div>
-
-  {% for s in shows %}
-    {% set full_show_url = request.url_root.rstrip('/') + url_for('show_page', slug=s['slug']) %}
-    <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
-      <div class="flex items-start justify-between gap-4">
-        <div class="min-w-0">
-          <div class="text-xs font-semibold
-            {% if s['status'] == 'active' %}text-emerald-600
-            {% elif s['status'] == 'upcoming' %}text-blue-600
-            {% elif s['status'] == 'past' %}text-slate-400
-            {% else %}text-amber-600
-            {% endif %}
-          ">
-            {{ s["status"]|upper }}
-          </div>
-
-          <div class="mt-1 text-xl font-semibold">{{ s["title"] }}</div>
-          <div class="mt-1 text-sm text-slate-600">Slug: {{ s["slug"] }}</div>
-
-          <div class="mt-3 text-sm text-slate-600">QR / show link</div>
-          <div class="mt-1 flex items-center gap-2">
-            <input
-              type="text"
-              value="{{ full_show_url }}"
-              readonly
-              class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs"
-            >
-            <button
-              type="button"
-              onclick="navigator.clipboard.writeText(this.previousElementSibling.value)"
-              class="btn btn-outline text-xs px-3 py-2"
-            >
-              Copy
-            </button>
-          </div>
-
-          <div class="mt-2 flex flex-wrap gap-2">
-            <a href="{{ url_for('events') }}" target="_blank" class="btn btn-outline text-xs px-3 py-2">
-              Open Upcoming Page
-            </a>
-            <a href="{{ full_show_url }}" target="_blank" class="btn btn-outline text-xs px-3 py-2">
-              Open Show Page
-            </a>
-            <a
-              href="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={{ full_show_url|urlencode }}"
-              target="_blank"
-              class="btn btn-outline text-xs px-3 py-2"
-            >
-              Generate QR Code
-            </a>
-          </div>
-        </div>
-
-        <div class="flex flex-wrap gap-2">
-          <form method="POST" action="{{ url_for('admin_shows_set_active', show_id=s['id']) }}">
-            <button class="btn btn-outline" type="submit">Set Active</button>
-          </form>
-
-          <form method="POST" action="{{ url_for('admin_shows_set_upcoming', show_id=s['id']) }}">
-            <button class="btn btn-outline" type="submit">Set Upcoming</button>
-          </form>
-
-          <form method="POST" action="{{ url_for('admin_shows_set_past', show_id=s['id']) }}">
-            <button class="btn btn-outline" type="submit">Set Past</button>
-          </form>
-
-          <form method="POST" action="{{ url_for('admin_shows_duplicate', show_id=s['id']) }}">
-            <button class="btn btn-outline" type="submit">Duplicate</button>
-          </form>
-        </div>
-      </div>
-
-      <form method="POST" action="{{ url_for('admin_shows_update', show_id=s['id']) }}" class="mt-4 grid gap-4">
-        <div class="grid gap-4 md:grid-cols-2">
-          <input name="title" value="{{ s['title'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-          <input name="slug" value="{{ s['slug'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <input name="date" value="{{ s['date'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-          <input name="time" value="{{ s['time'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <input name="location_name" value="{{ s['location_name'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-          <input name="address" value="{{ s['address'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <input name="benefiting" value="{{ s['benefiting'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-          <input name="suggested_donation" value="{{ s['suggested_donation'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-        </div>
-
-        <input name="short_details" value="{{ s['short_details'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-
-        <textarea name="description" rows="3" class="rounded-2xl border border-slate-200 px-4 py-3">{{ s['description'] or '' }}</textarea>
-        <textarea name="qr_message" rows="2" class="rounded-2xl border border-slate-200 px-4 py-3">{{ s['qr_message'] or '' }}</textarea>
-
-        <div class="grid gap-4 md:grid-cols-3">
-          <input name="cta_label" value="{{ s['cta_label'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-          <input name="cta_url" value="{{ s['cta_url'] or '' }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-          <input name="sort_order" value="{{ s['sort_order'] or 100 }}" class="rounded-2xl border border-slate-200 px-4 py-3">
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-3">
-          <select name="status" class="rounded-2xl border border-slate-200 px-4 py-3">
-            <option value="draft" {% if s["status"] == "draft" %}selected{% endif %}>Draft</option>
-            <option value="upcoming" {% if s["status"] == "upcoming" %}selected{% endif %}>Upcoming</option>
-            <option value="active" {% if s["status"] == "active" %}selected{% endif %}>Active</option>
-            <option value="past" {% if s["status"] == "past" %}selected{% endif %}>Past</option>
-          </select>
-
-          <label class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-            <input type="checkbox" name="show_on_site" {% if s["show_on_site"] %}checked{% endif %}>
-            <span>Show on site</span>
-          </label>
-
-          <label class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3">
-            <input type="checkbox" name="hide_address" {% if s["hide_address"] %}checked{% endif %}>
-            <span>Hide address</span>
-          </label>
-        </div>
-
-        <button class="btn btn-primary" type="submit">Save Changes</button>
-      </form>
-    </div>
-  {% endfor %}
-</div>
-{% endblock %}
+    filename = "event-leads.csv" if selected_show_id is None else f"event-leads-show-{selected_show_id}.csv"
+    return send_file(
+        io.BytesIO(csv_bytes),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=filename,
+    )
+   

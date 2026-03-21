@@ -39,7 +39,7 @@
           {% if show["date"] %}<div><span class="font-semibold">Date:</span> {{ show["date"] }}</div>{% endif %}
           {% if show["time"] %}<div><span class="font-semibold">Time:</span> {{ show["time"] }}</div>{% endif %}
           {% if show["location_name"] %}<div><span class="font-semibold">Location:</span> {{ show["location_name"] }}</div>{% endif %}
-          {% if show["address"] %}<div><span class="font-semibold">Address:</span> {{ show["address"] }}</div>{% endif %}
+          {% if show["address"] and not show["hide_address"] %}<div><span class="font-semibold">Address:</span> {{ show["address"] }}</div>{% endif %}
           {% if show["benefiting"] %}<div><span class="font-semibold">Benefiting:</span> {{ show["benefiting"] }}</div>{% endif %}
           {% if show["suggested_donation"] %}<div><span class="font-semibold">Suggested donation:</span> {{ show["suggested_donation"] }}</div>{% endif %}
         </div>
