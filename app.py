@@ -79,10 +79,8 @@ from database import (
     create_waiver_evidence_record,
     log_audit_event,
     rate_limit_increment,
-    get_upcoming_event,
-    save_upcoming_event,
     create_event_interest_signup,
-        list_shows_admin,
+    list_shows_admin,
     get_next_upcoming_show,
     create_show_admin,
     update_show_admin_record,
@@ -178,12 +176,6 @@ ATTENDEE_CONSENT_TEXT = (
 )
 ATTENDEE_CONSENT_VERSION = "2026-03-11"
 
-
-def _get_upcoming_event_for_display() -> Dict[str, Any]:
-    upcoming_event = get_upcoming_event()
-    if not upcoming_event:
-        return DEFAULT_UPCOMING_EVENT.copy()
-    return dict(upcoming_event)
 
 
 def prereg_allowed(show) -> bool:
@@ -663,24 +655,7 @@ def event_updates_signup():
 
     flash("You're on the list. Updates and reminders coming soon.", "ok")
     return redirect(url_for("events"))
-    # FUTURE DRIP / AUTO-MESSAGING PLACEHOLDER
-    # ----------------------------------------
-    # if wants_email and email:
-    #     send_upcoming_event_email(
-    #         to_email=email,
-    #         first_name=first_name,
-    #     )
-    #
-    # if wants_text and phone:
-    #     send_upcoming_event_text(
-    #         to_phone=phone,
-    #         first_name=first_name,
-    #     )
-
-    flash("You're on the list. Updates and reminders coming soon.", "ok")
-    return redirect(url_for("events"))
-
-
+   
 @app.get("/show/<slug>")
 def show_page(slug: str):
     show = get_show_by_slug(slug)
@@ -693,7 +668,7 @@ def show_page(slug: str):
 def register_page():
     show = get_active_show()
     if not show:
-        return "No active show configured.", 500
+        return "No active show cqonfigured.", 500
     if not prereg_allowed(show):
         return render_template("registration_closed.html", show=show), 403
     if not show_has_capacity(int(show["id"])):
@@ -1268,7 +1243,6 @@ def vote_success():
 def admin_page():
     show = get_active_show()
     next_url = request.args.get("next", "")
-    upcoming_event = _get_upcoming_event_for_display()
 
     if not session.get("admin_authed"):
         return render_template(
@@ -1276,7 +1250,6 @@ def admin_page():
             show=show,
             authed=False,
             next=next_url,
-            upcoming_event=upcoming_event,
         )
 
     return render_template(
@@ -1284,9 +1257,7 @@ def admin_page():
         show=show,
         authed=True,
         next=next_url,
-        upcoming_event=upcoming_event,
     )
-
 
 @app.post("/admin/login")
 @rate_limit("admin_login", 10, 900)
@@ -1299,8 +1270,7 @@ def admin_login():
         _log_event("admin.login_success", int(show["id"]) if show else None, {"next": next_url}, actor_type="admin")
         return redirect(next_url)
     _log_event("admin.login_failed", int(show["id"]) if show else None, {"next": next_url}, actor_type="admin")
-    return render_template("admin.html", show=show, authed=False, login_error="Incorrect password.", next=next_url, upcoming_event=_get_upcoming_event_for_display())
-
+    return render_template("admin.html", show=show, authed=False, login_error="Incorrect password.", next=next_url)
 
 @app.post("/admin/logout")
 @require_admin
@@ -1397,41 +1367,6 @@ def admin_show_settings():
     return redirect(url_for("admin_page"))
 
 
-@app.post("/admin/upcoming-event")
-@require_admin
-def admin_upcoming_event():
-    heading = request.form.get("upcoming_heading", "").strip() or DEFAULT_UPCOMING_EVENT["heading"]
-    title = request.form.get("upcoming_title", "").strip() or DEFAULT_UPCOMING_EVENT["title"]
-    display_date = request.form.get("upcoming_date", "").strip() or DEFAULT_UPCOMING_EVENT["display_date"]
-    intro = request.form.get("upcoming_intro", "").strip() or DEFAULT_UPCOMING_EVENT["intro"]
-    details = request.form.get("upcoming_details", "").strip() or DEFAULT_UPCOMING_EVENT["details"]
-    qr_message = request.form.get("upcoming_qr_message", "").strip() or DEFAULT_UPCOMING_EVENT["qr_message"]
-    visible = 1 if request.form.get("upcoming_visible", "1").strip() == "1" else 0
-
-    save_upcoming_event(
-        heading=heading,
-        title=title,
-        display_date=display_date,
-        visible=visible,
-        intro=intro,
-        details=details,
-        qr_message=qr_message,
-    )
-
-    show = get_active_show()
-    _log_event(
-        "admin.upcoming_event_saved",
-        int(show["id"]) if show else None,
-        {
-            "heading": heading,
-            "title": title,
-            "display_date": display_date,
-            "visible": visible,
-        },
-        actor_type="admin",
-    )
-    flash("Upcoming event page updated.", "ok")
-    return redirect(url_for("admin_page"))
 
 @app.get("/admin/shows")
 @require_admin
@@ -1444,6 +1379,7 @@ def admin_shows():
 def admin_shows_create():
     slug = request.form.get("slug", "").strip()
     title = request.form.get("title", "").strip()
+    hide_address=1 if request.form.get("hide_address") == "on" else 0,
     if not slug or not title:
         flash("Title and slug are required.", "error")
         return redirect(url_for("admin_shows"))
@@ -1491,7 +1427,8 @@ def admin_shows_update(show_id: int):
         cta_url=request.form.get("cta_url", "").strip(),
         show_on_site=1 if request.form.get("show_on_site") == "on" else 0,
         sort_order=int(request.form.get("sort_order", "100") or "100"),
-    )
+      )
+    hide_address=1 if request.form.get("hide_address") == "on" else 0,
     flash("Show updated.", "ok")
     return redirect(url_for("admin_shows"))
 
@@ -1503,6 +1440,12 @@ def admin_shows_set_active(show_id: int):
     flash("Show set as active.", "ok")
     return redirect(url_for("admin_shows"))
 
+@app.post("/admin/shows/<int:show_id>/duplicate")
+@require_admin
+def admin_shows_duplicate(show_id: int):
+    duplicate_show_admin(show_id)
+    flash("Show duplicated.", "ok")
+    return redirect(url_for("admin_shows"))
 
 @app.post("/admin/shows/<int:show_id>/set-upcoming")
 @require_admin

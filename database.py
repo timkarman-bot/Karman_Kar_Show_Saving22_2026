@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import secrets
 import io
@@ -38,6 +39,13 @@ def _new_car_token() -> str:
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
+def _slugify(value: str) -> str:
+    value = (value or "").strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+    value = value.strip("-")
+    return value or "upcoming-show"
 
 
 def init_db() -> None:
@@ -89,6 +97,14 @@ def init_db() -> None:
         "ALTER TABLE shows ADD COLUMN charity_connect_email TEXT",
         "ALTER TABLE shows ADD COLUMN waiver_text TEXT",
         "ALTER TABLE shows ADD COLUMN waiver_version TEXT",
+        "ALTER TABLE shows ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'",
+        "ALTER TABLE shows ADD COLUMN short_details TEXT",
+        "ALTER TABLE shows ADD COLUMN qr_message TEXT",
+        "ALTER TABLE shows ADD COLUMN cta_label TEXT",
+        "ALTER TABLE shows ADD COLUMN cta_url TEXT",
+        "ALTER TABLE shows ADD COLUMN show_on_site INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE shows ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 100",
+        "ALTER TABLE shows ADD COLUMN hide_address INTEGER NOT NULL DEFAULT 0",
     ]:
         try:
             cur.execute(sql)
@@ -401,8 +417,27 @@ def init_db() -> None:
         """
     )
 
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS event_interest_signups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            show_id INTEGER,
+            first_name TEXT NOT NULL,
+            last_name TEXT,
+            email TEXT,
+            phone TEXT,
+            wants_email INTEGER NOT NULL DEFAULT 0,
+            wants_text INTEGER NOT NULL DEFAULT 0,
+            source TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(show_id) REFERENCES shows(id)
+        )
+        """
+    )
+
     for sql in [
         "CREATE INDEX IF NOT EXISTS idx_shows_active ON shows(is_active)",
+        "CREATE INDEX IF NOT EXISTS idx_shows_status ON shows(status)",
         "CREATE INDEX IF NOT EXISTS idx_show_cars_show_id ON show_cars(show_id)",
         "CREATE INDEX IF NOT EXISTS idx_show_cars_token ON show_cars(car_token)",
         "CREATE INDEX IF NOT EXISTS idx_show_cars_state ON show_cars(show_id, registration_state)",
@@ -413,45 +448,9 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS idx_waiver_evidence_show_id ON waiver_evidence(show_id)",
         "CREATE INDEX IF NOT EXISTS idx_audit_logs_show_id ON audit_logs(show_id)",
         "CREATE INDEX IF NOT EXISTS idx_rate_limit_bucket ON rate_limit_hits(bucket_key, window_started_at)",
+        "CREATE INDEX IF NOT EXISTS idx_event_interest_show_id ON event_interest_signups(show_id)",
     ]:
         cur.execute(sql)
-     
-              # UPCOMING EVENT (single record)
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS upcoming_event (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            title TEXT,
-            event_date TEXT,
-            event_time TEXT,
-            location_name TEXT,
-            address TEXT,
-            description TEXT,
-            cta_label TEXT,
-            cta_url TEXT,
-            is_active INTEGER NOT NULL DEFAULT 1,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-        """
-    )
-    
-
-    # EVENT INTEREST SIGNUPS
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS event_interest_signups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            first_name TEXT NOT NULL,
-            last_name TEXT NOT NULL,
-            email TEXT,
-            phone TEXT,
-            wants_email INTEGER NOT NULL DEFAULT 0,
-            wants_text INTEGER NOT NULL DEFAULT 0,
-            source TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-        """
-    )
 
     conn.commit()
     conn.close()
@@ -469,8 +468,8 @@ def ensure_default_show(default_show: Dict[str, Any]) -> None:
             """
             INSERT INTO shows (
                 slug, title, date, time, location_name, address,
-                benefiting, suggested_donation, description, voting_open, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+                benefiting, suggested_donation, description, voting_open, is_active, status, show_on_site
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'draft', 1)
             """,
             (
                 default_show["slug"],
@@ -489,7 +488,7 @@ def ensure_default_show(default_show: Dict[str, Any]) -> None:
     active = cur.fetchone()
     if not active:
         cur.execute("UPDATE shows SET is_active = 0")
-        cur.execute("UPDATE shows SET is_active = 1 WHERE slug = ?", (default_show["slug"],))
+        cur.execute("UPDATE shows SET is_active = 1, status = 'active' WHERE slug = ?", (default_show["slug"],))
 
     conn.commit()
     conn.close()
@@ -514,6 +513,177 @@ def get_show_by_slug(slug: str) -> Optional[sqlite3.Row]:
     row = conn.execute("SELECT * FROM shows WHERE slug = ? LIMIT 1", (slug,)).fetchone()
     conn.close()
     return row
+
+
+def list_shows_admin() -> List[sqlite3.Row]:
+    conn = _conn()
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM shows
+        ORDER BY
+            CASE status
+                WHEN 'active' THEN 0
+                WHEN 'upcoming' THEN 1
+                WHEN 'draft' THEN 2
+                WHEN 'past' THEN 3
+                ELSE 4
+            END,
+            sort_order ASC,
+            date ASC,
+            id DESC
+        """
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_next_upcoming_show() -> Optional[sqlite3.Row]:
+    conn = _conn()
+    row = conn.execute(
+        """
+        SELECT *
+        FROM shows
+        WHERE status = 'upcoming' AND show_on_site = 1
+        ORDER BY sort_order ASC, date ASC, id ASC
+        LIMIT 1
+        """
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def create_show_admin(
+    *,
+    slug: str,
+    title: str,
+    date: str,
+    time: str,
+    location_name: str,
+    address: str,
+    benefiting: str,
+    suggested_donation: str,
+    description: str,
+    status: str,
+    short_details: str,
+    qr_message: str,
+    cta_label: str,
+    cta_url: str,
+    show_on_site: int,
+    sort_order: int,
+    hide_address: int = 0,
+) -> int:
+    conn = _conn()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO shows (
+            slug, title, date, time, location_name, address, benefiting,
+            suggested_donation, description, status, short_details, qr_message,
+            cta_label, cta_url, show_on_site, sort_order, voting_open, is_active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+        """,
+        (
+            slug.strip(),
+            title.strip(),
+            (date or "").strip(),
+            (time or "").strip(),
+            (location_name or "").strip(),
+            (address or "").strip(),
+            (benefiting or "").strip(),
+            (suggested_donation or "").strip(),
+            (description or "").strip(),
+            (status or "draft").strip(),
+            (short_details or "").strip(),
+            (qr_message or "").strip(),
+            (cta_label or "").strip(),
+            (cta_url or "").strip(),
+            int(show_on_site),
+            int(sort_order),
+        ),
+    )
+    conn.commit()
+    rid = int(cur.lastrowid)
+    conn.close()
+    return rid
+
+
+def update_show_admin_record(
+    show_id: int,
+    *,
+    slug: str,
+    title: str,
+    date: str,
+    time: str,
+    location_name: str,
+    address: str,
+    benefiting: str,
+    suggested_donation: str,
+    description: str,
+    status: str,
+    short_details: str,
+    qr_message: str,
+    cta_label: str,
+    cta_url: str,
+    show_on_site: int,
+    sort_order: int,
+    hide_address: int = 0,
+) -> None:
+    conn = _conn()
+    conn.execute(
+        """
+        UPDATE shows
+        SET slug = ?, title = ?, date = ?, time = ?, location_name = ?, address = ?,
+            benefiting = ?, suggested_donation = ?, description = ?, status = ?,
+            short_details = ?, qr_message = ?, cta_label = ?, cta_url = ?,
+            show_on_site = ?, sort_order = ?
+        WHERE id = ?
+        """,
+        (
+            slug.strip(),
+            title.strip(),
+            (date or "").strip(),
+            (time or "").strip(),
+            (location_name or "").strip(),
+            (address or "").strip(),
+            (benefiting or "").strip(),
+            (suggested_donation or "").strip(),
+            (description or "").strip(),
+            (status or "draft").strip(),
+            (short_details or "").strip(),
+            (qr_message or "").strip(),
+            (cta_label or "").strip(),
+            (cta_url or "").strip(),
+            int(show_on_site),
+            int(sort_order),
+            show_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_active_show(show_id: int) -> None:
+    conn = _conn()
+    conn.execute("UPDATE shows SET is_active = 0 WHERE is_active = 1")
+    conn.execute("UPDATE shows SET is_active = 1, status = 'active' WHERE id = ?", (show_id,))
+    conn.commit()
+    conn.close()
+
+
+def set_upcoming_show(show_id: int) -> None:
+    conn = _conn()
+    conn.execute("UPDATE shows SET status = 'upcoming', show_on_site = 1 WHERE id = ?", (show_id,))
+    conn.commit()
+    conn.close()
+
+
+def set_past_show(show_id: int) -> None:
+    conn = _conn()
+    conn.execute("UPDATE shows SET status = 'past', is_active = 0 WHERE id = ?", (show_id,))
+    conn.commit()
+    conn.close()
 
 
 def export_show_row(show_id: int):
@@ -1550,73 +1720,110 @@ def mark_webhook_event_processed(stripe_event_id: str, event_type: str) -> None:
         pass
     finally:
         conn.close()
-# ===============================
-# UPCOMING EVENT / INTEREST SIGNUPS
-# ===============================
 
-def get_upcoming_event() -> Optional[sqlite3.Row]:
-    conn = _conn()
-    row = conn.execute(
-        """
-        SELECT *
-        FROM upcoming_event
-        WHERE id = 1 AND is_active = 1
-        LIMIT 1
-        """
-    ).fetchone()
-    conn.close()
-    return row
+
+# UPCOMING EVENT / INTEREST SIGNUPS
+# Compatibility layer so app.py can keep calling these,
+# but the real source of truth is the shows table.
+
+def get_upcoming_event() -> Optional[Dict[str, Any]]:
+    row = get_next_upcoming_show()
+    if not row:
+        return None
+
+    return {
+        "heading": "Upcoming show",
+        "title": row["title"] or "",
+        "display_date": row["date"] or "",
+        "visible": 1 if int(row["show_on_site"] or 0) == 1 else 0,
+        "intro": row["description"] or "Check the newsletter QR code for the latest details on our next show or pop-up event.",
+        "details": row["short_details"] or "",
+        "qr_message": row["qr_message"] or "",
+    }
 
 
 def save_upcoming_event(
+    *,
+    heading: str,
     title: str,
-    event_date: str,
-    event_time: str,
-    location_name: str,
-    address: str,
-    description: str,
-    cta_label: str = "",
-    cta_url: str = "",
-    is_active: bool = True,
+    display_date: str,
+    visible: int,
+    intro: str,
+    details: str,
+    qr_message: str,
 ) -> None:
     conn = _conn()
-    conn.execute(
+    cur = conn.cursor()
+
+    row = cur.execute(
         """
-        INSERT INTO upcoming_event (
-            id, title, event_date, event_time, location_name, address,
-            description, cta_label, cta_url, is_active, updated_at
+        SELECT *
+        FROM shows
+        WHERE status = 'upcoming'
+        ORDER BY sort_order ASC, id ASC
+        LIMIT 1
+        """
+    ).fetchone()
+
+    slug = _slugify(title or "upcoming-show")
+
+    if row:
+        cur.execute(
+            """
+            UPDATE shows
+            SET title = ?,
+                date = ?,
+                description = ?,
+                short_details = ?,
+                qr_message = ?,
+                show_on_site = ?,
+                status = 'upcoming',
+                sort_order = 0
+            WHERE id = ?
+            """,
+            (
+                (title or "").strip(),
+                (display_date or "").strip(),
+                (intro or "").strip(),
+                (details or "").strip(),
+                (qr_message or "").strip(),
+                int(visible),
+                int(row["id"]),
+            ),
         )
-        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(id) DO UPDATE SET
-            title = excluded.title,
-            event_date = excluded.event_date,
-            event_time = excluded.event_time,
-            location_name = excluded.location_name,
-            address = excluded.address,
-            description = excluded.description,
-            cta_label = excluded.cta_label,
-            cta_url = excluded.cta_url,
-            is_active = excluded.is_active,
-            updated_at = datetime('now')
-        """,
-        (
-            (title or "").strip(),
-            (event_date or "").strip(),
-            (event_time or "").strip(),
-            (location_name or "").strip(),
-            (address or "").strip(),
-            (description or "").strip(),
-            (cta_label or "").strip(),
-            (cta_url or "").strip(),
-            _b(is_active),
-        ),
-    )
+    else:
+        candidate_slug = slug
+        n = 2
+        while cur.execute("SELECT 1 FROM shows WHERE slug = ? LIMIT 1", (candidate_slug,)).fetchone():
+            candidate_slug = f"{slug}-{n}"
+            n += 1
+
+        cur.execute(
+            """
+            INSERT INTO shows (
+                slug, title, date, description, short_details, qr_message,
+                status, show_on_site, sort_order, voting_open, is_active
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'upcoming', ?, 0, 0, 0)
+            """,
+            (
+                candidate_slug,
+                (title or "").strip(),
+                (display_date or "").strip(),
+                (intro or "").strip(),
+                (details or "").strip(),
+                (qr_message or "").strip(),
+                int(visible),
+            ),
+        )
+
     conn.commit()
     conn.close()
 
 
 def create_event_interest_signup(
     *,
+    show_id: Optional[int] = None,
     first_name: str,
     last_name: str,
     email: str,
@@ -1625,17 +1832,22 @@ def create_event_interest_signup(
     wants_text: bool,
     source: str = "",
 ) -> int:
+    if show_id is None:
+        row = get_next_upcoming_show()
+        show_id = int(row["id"]) if row else None
+
     conn = _conn()
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO event_interest_signups (
-            first_name, last_name, email, phone,
+            show_id, first_name, last_name, email, phone,
             wants_email, wants_text, source
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            show_id,
             (first_name or "").strip(),
             (last_name or "").strip(),
             (email or "").strip(),
