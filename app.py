@@ -82,6 +82,13 @@ from database import (
     get_upcoming_event,
     save_upcoming_event,
     create_event_interest_signup,
+        list_shows_admin,
+    get_next_upcoming_show,
+    create_show_admin,
+    update_show_admin_record,
+    set_active_show,
+    set_upcoming_show,
+    set_past_show
 )
 
 
@@ -599,17 +606,19 @@ def voting_instructions(show_slug: str):
 
 @app.get("/events")
 def events():
+    upcoming_show = get_next_upcoming_show()
     return render_template(
         "events.html",
         show=get_active_show(),
-        upcoming_event=_get_upcoming_event_for_display(),
+        upcoming_show=upcoming_show,
         hide_nav=True,
     )
-
 
 @app.post("/event-updates-signup")
 @rate_limit("event_updates_signup", 20, 300)
 def event_updates_signup():
+    upcoming_show = get_next_upcoming_show()
+
     first_name = request.form.get("first_name", "").strip()
     last_name = request.form.get("last_name", "").strip()
     email = request.form.get("email", "").strip().lower()
@@ -635,6 +644,7 @@ def event_updates_signup():
         return redirect(url_for("events"))
 
     create_event_interest_signup(
+        show_id=int(upcoming_show["id"]) if upcoming_show else None,
         first_name=first_name,
         last_name=last_name,
         email=email,
@@ -644,6 +654,15 @@ def event_updates_signup():
         source=source,
     )
 
+    # FUTURE DRIP / AUTO-MESSAGING PLACEHOLDER
+    # ----------------------------------------
+    # if wants_email and email:
+    #     send_upcoming_event_email(to_email=email, first_name=first_name)
+    # if wants_text and phone:
+    #     send_upcoming_event_text(to_phone=phone, first_name=first_name)
+
+    flash("You're on the list. Updates and reminders coming soon.", "ok")
+    return redirect(url_for("events"))
     # FUTURE DRIP / AUTO-MESSAGING PLACEHOLDER
     # ----------------------------------------
     # if wants_email and email:
@@ -1414,6 +1433,91 @@ def admin_upcoming_event():
     flash("Upcoming event page updated.", "ok")
     return redirect(url_for("admin_page"))
 
+@app.get("/admin/shows")
+@require_admin
+def admin_shows():
+    return render_template("admin_shows.html", shows=list_shows_admin(), show=get_active_show())
+
+
+@app.post("/admin/shows/create")
+@require_admin
+def admin_shows_create():
+    slug = request.form.get("slug", "").strip()
+    title = request.form.get("title", "").strip()
+    if not slug or not title:
+        flash("Title and slug are required.", "error")
+        return redirect(url_for("admin_shows"))
+
+    create_show_admin(
+        slug=slug,
+        title=title,
+        date=request.form.get("date", "").strip(),
+        time=request.form.get("time", "").strip(),
+        location_name=request.form.get("location_name", "").strip(),
+        address=request.form.get("address", "").strip(),
+        benefiting=request.form.get("benefiting", "").strip(),
+        suggested_donation=request.form.get("suggested_donation", "").strip(),
+        description=request.form.get("description", "").strip(),
+        status=request.form.get("status", "draft").strip(),
+        short_details=request.form.get("short_details", "").strip(),
+        qr_message=request.form.get("qr_message", "").strip(),
+        cta_label=request.form.get("cta_label", "").strip(),
+        cta_url=request.form.get("cta_url", "").strip(),
+        show_on_site=1 if request.form.get("show_on_site") == "on" else 0,
+        sort_order=int(request.form.get("sort_order", "100") or "100"),
+    )
+    flash("Show created.", "ok")
+    return redirect(url_for("admin_shows"))
+
+
+@app.post("/admin/shows/<int:show_id>/update")
+@require_admin
+def admin_shows_update(show_id: int):
+    update_show_admin_record(
+        show_id,
+        slug=request.form.get("slug", "").strip(),
+        title=request.form.get("title", "").strip(),
+        date=request.form.get("date", "").strip(),
+        time=request.form.get("time", "").strip(),
+        location_name=request.form.get("location_name", "").strip(),
+        address=request.form.get("address", "").strip(),
+        benefiting=request.form.get("benefiting", "").strip(),
+        suggested_donation=request.form.get("suggested_donation", "").strip(),
+        description=request.form.get("description", "").strip(),
+        status=request.form.get("status", "draft").strip(),
+        short_details=request.form.get("short_details", "").strip(),
+        qr_message=request.form.get("qr_message", "").strip(),
+        cta_label=request.form.get("cta_label", "").strip(),
+        cta_url=request.form.get("cta_url", "").strip(),
+        show_on_site=1 if request.form.get("show_on_site") == "on" else 0,
+        sort_order=int(request.form.get("sort_order", "100") or "100"),
+    )
+    flash("Show updated.", "ok")
+    return redirect(url_for("admin_shows"))
+
+
+@app.post("/admin/shows/<int:show_id>/set-active")
+@require_admin
+def admin_shows_set_active(show_id: int):
+    set_active_show(show_id)
+    flash("Show set as active.", "ok")
+    return redirect(url_for("admin_shows"))
+
+
+@app.post("/admin/shows/<int:show_id>/set-upcoming")
+@require_admin
+def admin_shows_set_upcoming(show_id: int):
+    set_upcoming_show(show_id)
+    flash("Show set as upcoming.", "ok")
+    return redirect(url_for("admin_shows"))
+
+
+@app.post("/admin/shows/<int:show_id>/set-past")
+@require_admin
+def admin_shows_set_past(show_id: int):
+    set_past_show(show_id)
+    flash("Show moved to past.", "ok")
+    return redirect(url_for("admin_shows"))
 
 @app.get("/admin/print-cards.pdf")
 @require_admin
