@@ -449,8 +449,18 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS idx_audit_logs_show_id ON audit_logs(show_id)",
         "CREATE INDEX IF NOT EXISTS idx_rate_limit_bucket ON rate_limit_hits(bucket_key, window_started_at)",
         "CREATE INDEX IF NOT EXISTS idx_event_interest_show_id ON event_interest_signups(show_id)",
+        "CREATE INDEX IF NOT EXISTS idx_event_interest_created_at ON event_interest_signups(created_at)",
     ]:
         cur.execute(sql)
+        
+# ===============================
+# PATCH: ensure show_id exists on event_interest_signups
+# ===============================
+try:
+    cur.execute("ALTER TABLE event_interest_signups ADD COLUMN show_id INTEGER")
+except Exception:
+    pass
+
 
     conn.commit()
     conn.close()
@@ -466,10 +476,12 @@ def ensure_default_show(default_show: Dict[str, Any]) -> None:
     if not row:
         cur.execute(
             """
-            INSERT INTO shows (
-                slug, title, date, time, location_name, address,
-                benefiting, suggested_donation, description, voting_open, is_active, status, show_on_site
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'draft', 1)
+INSERT INTO shows (
+    slug, title, date, time, location_name, address, benefiting,
+    suggested_donation, description, status, short_details, qr_message,
+    cta_label, cta_url, show_on_site, sort_order, hide_address, voting_open, is_active
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
             """,
             (
                 default_show["slug"],
@@ -580,9 +592,9 @@ def create_show_admin(
         INSERT INTO shows (
             slug, title, date, time, location_name, address, benefiting,
             suggested_donation, description, status, short_details, qr_message,
-            cta_label, cta_url, show_on_site, sort_order, voting_open, is_active
+            cta_label, cta_url, show_on_site, sort_order, hide_address, voting_open, is_active
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
         """,
         (
             slug.strip(),
@@ -601,6 +613,7 @@ def create_show_admin(
             (cta_url or "").strip(),
             int(show_on_site),
             int(sort_order),
+            int(hide_address),
         ),
     )
     conn.commit()
@@ -657,6 +670,7 @@ def update_show_admin_record(
             (cta_url or "").strip(),
             int(show_on_site),
             int(sort_order),
+            int(hide_address),
             show_id,
         ),
     )
@@ -1777,6 +1791,8 @@ def save_upcoming_event(
                 short_details = ?,
                 qr_message = ?,
                 show_on_site = ?,
+                sort_order = ?,
+                hide_address = ?,
                 status = 'upcoming',
                 sort_order = 0
             WHERE id = ?
