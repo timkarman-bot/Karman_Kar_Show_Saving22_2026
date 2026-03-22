@@ -61,6 +61,10 @@ def init_db() -> None:
             date TEXT,
             time TEXT,
             location_name TEXT,
+            cars_arrive_time TEXT,
+            show_start_time TEXT,
+            show_end_time TEXT,
+            map_url TEXT,
             address TEXT,
             benefiting TEXT,
             suggested_donation TEXT,
@@ -103,6 +107,10 @@ def init_db() -> None:
         "ALTER TABLE shows ADD COLUMN cta_label TEXT",
         "ALTER TABLE shows ADD COLUMN cta_url TEXT",
         "ALTER TABLE shows ADD COLUMN show_on_site INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE shows ADD COLUMN cars_arrive_time TEXT",
+        "ALTER TABLE shows ADD COLUMN show_start_time TEXT",
+        "ALTER TABLE shows ADD COLUMN show_end_time TEXT",
+        "ALTER TABLE shows ADD COLUMN map_url TEXT",
         "ALTER TABLE shows ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 100",
         "ALTER TABLE shows ADD COLUMN hide_address INTEGER NOT NULL DEFAULT 0",
     ]:
@@ -1734,6 +1742,10 @@ def mark_webhook_event_processed(stripe_event_id: str, event_type: str) -> None:
 # Compatibility layer so app.py can keep calling these,
 # but the real source of truth is the shows table.
 
+# UPCOMING EVENT / INTEREST SIGNUPS
+# Compatibility layer so app.py can keep calling these,
+# but the real source of truth is the shows table.
+
 def get_upcoming_event() -> Optional[Dict[str, Any]]:
     row = get_next_upcoming_show()
     if not row:
@@ -1828,7 +1840,52 @@ def save_upcoming_event(
 
     conn.commit()
     conn.close()
-    
+
+
+def create_event_interest_signup(
+    *,
+    show_id: Optional[int] = None,
+    first_name: str,
+    last_name: str,
+    email: str,
+    phone: str,
+    wants_email: bool,
+    wants_text: bool,
+    source: str = "",
+) -> int:
+    if show_id is None:
+        row = get_next_upcoming_show()
+        show_id = int(row["id"]) if row else None
+
+    conn = _conn()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO event_interest_signups (
+            show_id, first_name, last_name, email, phone,
+            wants_email, wants_text, source
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            show_id,
+            (first_name or "").strip(),
+            (last_name or "").strip(),
+            (email or "").strip(),
+            (phone or "").strip(),
+            _b(wants_email),
+            _b(wants_text),
+            (source or "").strip(),
+        ),
+    )
+
+    conn.commit()
+    rid = int(cur.lastrowid)
+    conn.close()
+    return rid
+
+
 def list_event_interest_signups(show_id: Optional[int] = None) -> List[sqlite3.Row]:
     conn = _conn()
     if show_id is None:
@@ -1893,55 +1950,17 @@ def export_event_interest_signups_csv(show_id: Optional[int] = None) -> bytes:
             r["source"],
         ])
     return buf.getvalue().encode("utf-8")
-    
-    
 
-def create_event_interest_signup(
-    *,
-    show_id: Optional[int] = None,
-    first_name: str,
-    last_name: str,
-    email: str,
-    phone: str,
-    wants_email: bool,
-    wants_text: bool,
-    source: str = "",
-) -> int:
-    if show_id is None:
-        row = get_next_upcoming_show()
-        show_id = int(row["id"]) if row else None
 
-    conn = _conn()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        INSERT INTO event_interest_signups (
-            show_id, first_name, last_name, email, phone,
-            wants_email, wants_text, source
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            show_id,
-            (first_name or "").strip(),
-            (last_name or "").strip(),
-            (email or "").strip(),
-            (phone or "").strip(),
-            _b(wants_email),
-            _b(wants_text),
-            (source or "").strip(),
-        ),
-    )
-
-    conn.commit()
-    rid = int(cur.lastrowid)
-    conn.close()
-    return rid
-    
+#=======================================
+# SNAPSHOT EXPORT
+#=======================================
+        
+        
 #=======================================    
 # SNAPSHOT EXPORT
 #=======================================
+
 def export_people_rows_for_show(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
     rows = conn.execute(
