@@ -1403,11 +1403,6 @@ def admin_shows_create():
         title=title,
         date=request.form.get("date", "").strip(),
         time=request.form.get("time", "").strip(),
-        cars_arrive_time = request.form.get("cars_arrive_time", "").strip(),
-        show_start_time = request.form.get("show_start_time", "").strip(),
-        show_end_time = request.form.get("show_end_time", "").strip(),
-        description = request.form.get("description", "").strip(),
-        map_url = request.form.get("map_url", "").strip(),
         location_name=request.form.get("location_name", "").strip(),
         address=request.form.get("address", "").strip(),
         benefiting=request.form.get("benefiting", "").strip(),
@@ -1422,8 +1417,10 @@ def admin_shows_create():
         sort_order=int(request.form.get("sort_order", "100") or "100"),
         hide_address=1 if request.form.get("hide_address") == "on" else 0,
     )
+
     flash("Show created.", "ok")
     return redirect(url_for("admin_shows"))
+
 
 @app.post("/admin/shows/<int:show_id>/update")
 @require_admin
@@ -1434,11 +1431,6 @@ def admin_shows_update(show_id: int):
         title=request.form.get("title", "").strip(),
         date=request.form.get("date", "").strip(),
         time=request.form.get("time", "").strip(),
-        cars_arrive_time = request.form.get("cars_arrive_time", "").strip(),
-        show_start_time = request.form.get("show_start_time", "").strip(),
-        show_end_time = request.form.get("show_end_time", "").strip(),
-        description = request.form.get("description", "").strip(),
-        map_url = request.form.get("map_url", "").strip(),
         location_name=request.form.get("location_name", "").strip(),
         address=request.form.get("address", "").strip(),
         benefiting=request.form.get("benefiting", "").strip(),
@@ -1453,9 +1445,10 @@ def admin_shows_update(show_id: int):
         sort_order=int(request.form.get("sort_order", "100") or "100"),
         hide_address=1 if request.form.get("hide_address") == "on" else 0,
     )
+
     flash("Show updated.", "ok")
     return redirect(url_for("admin_shows"))
-
+    
 @app.post("/admin/shows/<int:show_id>/set-active")
 @require_admin
 def admin_shows_set_active(show_id: int):
