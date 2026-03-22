@@ -661,10 +661,22 @@ def event_updates_signup():
 @app.get("/show/<slug>")
 def show_page(slug: str):
     show = get_show_by_slug(slug)
+
+    # Newsletter / legacy QR fallback
+    if not show and slug == "karman-charity-show":
+        active_show = get_active_show()
+        if active_show and active_show["slug"] != slug:
+            return redirect(url_for("show_page", slug=active_show["slug"]), code=302)
+
     if not show:
         return render_template("show.html", show={"title": "Show Not Found"}, not_found=True)
-    return render_template("show.html", show=show, cars=list_show_cars_public(int(show["id"])), not_found=False)
 
+    return render_template(
+        "show.html",
+        show=show,
+        cars=list_show_cars_public(int(show["id"])),
+        not_found=False,
+    )
 
 @app.get("/register")
 def register_page():
