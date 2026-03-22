@@ -79,6 +79,7 @@ from database import (
     create_waiver_evidence_record,
     log_audit_event,
     rate_limit_increment,
+    list_event_interest_signups,
     create_event_interest_signup,
     list_shows_admin,
     get_next_upcoming_show,
@@ -86,6 +87,7 @@ from database import (
     update_show_admin_record,
     set_active_show,
     set_upcoming_show,
+    export_event_interest_signups_csv,
     set_past_show
 )
 
@@ -1379,7 +1381,7 @@ def admin_shows():
 def admin_shows_create():
     slug = request.form.get("slug", "").strip()
     title = request.form.get("title", "").strip()
-    hide_address=1 if request.form.get("hide_address") == "on" else 0,
+
     if not slug or not title:
         flash("Title and slug are required.", "error")
         return redirect(url_for("admin_shows"))
@@ -1401,10 +1403,10 @@ def admin_shows_create():
         cta_url=request.form.get("cta_url", "").strip(),
         show_on_site=1 if request.form.get("show_on_site") == "on" else 0,
         sort_order=int(request.form.get("sort_order", "100") or "100"),
+        hide_address=1 if request.form.get("hide_address") == "on" else 0,
     )
     flash("Show created.", "ok")
     return redirect(url_for("admin_shows"))
-
 
 @app.post("/admin/shows/<int:show_id>/update")
 @require_admin
@@ -1428,11 +1430,9 @@ def admin_shows_update(show_id: int):
         show_on_site=1 if request.form.get("show_on_site") == "on" else 0,
         sort_order=int(request.form.get("sort_order", "100") or "100"),
         hide_address=1 if request.form.get("hide_address") == "on" else 0,
-      )
-    hide_address=1 if request.form.get("hide_address") == "on" else 0,
+    )
     flash("Show updated.", "ok")
     return redirect(url_for("admin_shows"))
-
 
 @app.post("/admin/shows/<int:show_id>/set-active")
 @require_admin
@@ -1589,9 +1589,7 @@ def admin_reset_votes():
 @require_admin
 def admin_leads():
     show_id_raw = request.args.get("show_id", "").strip()
-    selected_show_id = None
-    if show_id_raw.isdigit():
-        selected_show_id = int(show_id_raw)
+    selected_show_id = int(show_id_raw) if show_id_raw.isdigit() else None
 
     leads = list_event_interest_signups(selected_show_id)
     shows = list_shows_admin()
@@ -1610,16 +1608,16 @@ def admin_leads():
 def admin_leads_export():
     show_id_raw = request.args.get("show_id", "").strip()
     selected_show_id = int(show_id_raw) if show_id_raw.isdigit() else None
-    csv_bytes = export_event_interest_signups_csv(selected_show_id)
 
+    csv_bytes = export_event_interest_signups_csv(selected_show_id)
     filename = "event-leads.csv" if selected_show_id is None else f"event-leads-show-{selected_show_id}.csv"
+
     return send_file(
         io.BytesIO(csv_bytes),
         mimetype="text/csv",
         as_attachment=True,
         download_name=filename,
     )
-
 
 @app.get("/admin/leaderboard")
 @require_admin
