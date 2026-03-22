@@ -106,7 +106,12 @@ def init_db() -> None:
         "ALTER TABLE shows ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 100",
         "ALTER TABLE shows ADD COLUMN hide_address INTEGER NOT NULL DEFAULT 0",
     ]:
-            cur.execute(
+        try:
+            cur.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS people (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -429,8 +434,7 @@ def init_db() -> None:
         )
         """
     )
-# REMOVED
-   
+
     for sql in [
         "CREATE INDEX IF NOT EXISTS idx_shows_active ON shows(is_active)",
         "CREATE INDEX IF NOT EXISTS idx_shows_status ON shows(status)",
@@ -451,6 +455,8 @@ def init_db() -> None:
 
     conn.commit()
     conn.close()
+
+
 # SHOWS
 
 def ensure_default_show(default_show: Dict[str, Any]) -> None:
