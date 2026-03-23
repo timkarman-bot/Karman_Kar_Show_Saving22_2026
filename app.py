@@ -297,17 +297,18 @@ def _same_origin_allowed() -> bool:
         return True
     if request.endpoint == "stripe_webhook":
         return True
-    host_url = _abs_url("")
-    host = urlparse(host_url).netloc
+
     origin = request.headers.get("Origin", "").strip()
     referer = request.headers.get("Referer", "").strip()
+    request_host = request.host
+
     if origin:
-        return urlparse(origin).netloc == host
+        return urlparse(origin).netloc == request_host
     if referer:
-        return urlparse(referer).netloc == host
-    return IS_DEV
+        return urlparse(referer).netloc == request_host
 
-
+    return True
+    
 @app.before_request
 def security_before_request():
     session.permanent = True
@@ -601,13 +602,16 @@ def voting_instructions(show_slug: str):
 @app.get("/events")
 def events():
     upcoming_show = get_next_upcoming_show()
+    if not upcoming_show:
+        upcoming_show = get_active_show()
+
     return render_template(
         "events.html",
         show=get_active_show(),
         upcoming_show=upcoming_show,
         hide_nav=True,
     )
-
+    
 @app.post("/event-updates-signup")
 @rate_limit("event_updates_signup", 20, 300)
 def event_updates_signup():
@@ -662,7 +666,6 @@ def event_updates_signup():
 def show_page(slug: str):
     show = get_show_by_slug(slug)
 
-    # Newsletter / legacy QR fallback
     if not show and slug == "karman-charity-show":
         active_show = get_active_show()
         if active_show and active_show["slug"] != slug:
@@ -674,10 +677,9 @@ def show_page(slug: str):
     return render_template(
         "show.html",
         show=show,
-        cars=list_show_cars_public(int(show["id"])),
         not_found=False,
     )
-
+    
 @app.get("/register")
 def register_page():
     show = get_active_show()
