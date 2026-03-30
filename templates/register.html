@@ -7,10 +7,41 @@
     <div class="text-center">
       <h1 class="text-3xl font-semibold tracking-tight">Register Your Car</h1>
       <p class="mt-2 text-slate-600">{{ show["title"] }}</p>
-      {% if show["date"] or show["time"] %}
-        <p class="mt-1 text-sm text-slate-500">
-          {{ show["date"] }}{% if show["date"] and show["time"] %} • {% endif %}{{ show["time"] }}
-        </p>
+    </div>
+
+    <div class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+      <div class="font-semibold text-slate-900 mb-2">Event Details</div>
+
+      {% if show["date"] %}
+        <div><span class="font-semibold">Date:</span> {{ show["date"] }}</div>
+      {% endif %}
+
+      {% if show["time"] %}
+        <div><span class="font-semibold">General Time:</span> {{ show["time"] }}</div>
+      {% endif %}
+
+      {% if show["cars_arrive_time"] %}
+        <div><span class="font-semibold">Cars Arrive:</span> {{ show["cars_arrive_time"] }}</div>
+      {% endif %}
+
+      {% if show["day_of_registration_time"] %}
+        <div><span class="font-semibold">Day-of Registration:</span> {{ show["day_of_registration_time"] }}</div>
+      {% endif %}
+
+      {% if show["show_start_time"] %}
+        <div><span class="font-semibold">Show Starts:</span> {{ show["show_start_time"] }}</div>
+      {% endif %}
+
+      {% if show["show_end_time"] %}
+        <div><span class="font-semibold">Show Ends:</span> {{ show["show_end_time"] }}</div>
+      {% endif %}
+
+      {% if show["location_name"] %}
+        <div><span class="font-semibold">Location:</span> {{ show["location_name"] }}</div>
+      {% endif %}
+
+      {% if show["address"] and not show["hide_address"] %}
+        <div><span class="font-semibold">Address:</span> {{ show["address"] }}</div>
       {% endif %}
     </div>
 

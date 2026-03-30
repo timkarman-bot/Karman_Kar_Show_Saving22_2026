@@ -16,13 +16,46 @@
       <p class="mt-3 text-slate-700 max-w-2xl">{{ show["description"] }}</p>
 
       <div class="mt-6 grid gap-2 text-sm text-slate-700">
-        {% if show["date"] %}<div><span class="font-semibold">Date:</span> {{ show["date"] }}</div>{% endif %}
-        {% if show["time"] %}<div><span class="font-semibold">Time:</span> {{ show["time"] }}</div>{% endif %}
-        {% if show["location_name"] %}<div><span class="font-semibold">Location:</span> {{ show["location_name"] }}</div>{% endif %}
-        {% if show["address"] and not show["hide_address"] %}<div><span class="font-semibold">Address:</span> {{ show["address"] }}</div>{% endif %}
-        {% if show["benefiting"] %}<div><span class="font-semibold">Benefiting:</span> {{ show["benefiting"] }}</div>{% endif %}
-        {% if show["suggested_donation"] %}<div><span class="font-semibold">Suggested donation:</span> {{ show["suggested_donation"] }}</div>{% endif %}
-      </div>
+  {% if show["date"] %}
+    <div><span class="font-semibold">Date:</span> {{ show["date"] }}</div>
+  {% endif %}
+
+  {% if show["time"] %}
+    <div><span class="font-semibold">General Time:</span> {{ show["time"] }}</div>
+  {% endif %}
+
+  {% if show["cars_arrive_time"] %}
+    <div><span class="font-semibold">Cars Arrive:</span> {{ show["cars_arrive_time"] }}</div>
+  {% endif %}
+
+  {% if show["day_of_registration_time"] %}
+    <div><span class="font-semibold">Day-of Registration:</span> {{ show["day_of_registration_time"] }}</div>
+  {% endif %}
+
+  {% if show["show_start_time"] %}
+    <div><span class="font-semibold">Show Starts:</span> {{ show["show_start_time"] }}</div>
+  {% endif %}
+
+  {% if show["show_end_time"] %}
+    <div><span class="font-semibold">Show Ends:</span> {{ show["show_end_time"] }}</div>
+  {% endif %}
+
+  {% if show["location_name"] %}
+    <div><span class="font-semibold">Location:</span> {{ show["location_name"] }}</div>
+  {% endif %}
+
+  {% if show["address"] and not show["hide_address"] %}
+    <div><span class="font-semibold">Address:</span> {{ show["address"] }}</div>
+  {% endif %}
+
+  {% if show["benefiting"] %}
+    <div><span class="font-semibold">Benefiting:</span> {{ show["benefiting"] }}</div>
+  {% endif %}
+
+  {% if show["suggested_donation"] %}
+    <div><span class="font-semibold">Suggested donation:</span> {{ show["suggested_donation"] }}</div>
+  {% endif %}
+</div>
 
       {% if show["short_details"] %}
         <div class="mt-6 rounded-2xl border border-slate-200 bg-white/70 p-4 text-sm text-slate-700">

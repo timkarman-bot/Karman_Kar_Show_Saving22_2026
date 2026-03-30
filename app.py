@@ -756,9 +756,7 @@ def events():
         "events.html",
         show=get_active_show(),
         upcoming_show=upcoming_show,
-        hide_nav=True,
     )
-
 
 @app.post("/event-updates-signup")
 @rate_limit("event_updates_signup", 20, 300)
