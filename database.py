@@ -1021,6 +1021,12 @@ def update_show_admin_settings(
     public_vote_disclosure: str,
     public_registration_disclosure: str,
     public_donation_disclosure: str,
+    voting_mode: str = "fundraiser_unlimited",
+    payment_mode: str = "stripe",
+    external_payment_url: str = "",
+    allow_custom_votes: int = 1,
+    preset_vote_options: str = "1,5,10,20,25",
+    max_votes_per_checkout: int = 50,
     waiver_text: str = "",
     waiver_version: str = "",
 ) -> None:
@@ -1048,14 +1054,36 @@ def update_show_admin_settings(
         registration_fee_cents = max(0, int(registration_fee_cents))
     except Exception:
         registration_fee_cents = 0
+
     try:
         attendee_fee_cents = max(0, int(attendee_fee_cents))
     except Exception:
         attendee_fee_cents = 0
+
     try:
         vote_price_cents = max(1, int(vote_price_cents))
     except Exception:
         vote_price_cents = 100
+
+    voting_mode = (voting_mode or "fundraiser_unlimited").strip().lower()
+    if voting_mode not in {"fundraiser_unlimited", "restricted_single"}:
+        voting_mode = "fundraiser_unlimited"
+
+    payment_mode = (payment_mode or "stripe").strip().lower()
+    if payment_mode not in {"stripe", "external"}:
+        payment_mode = "stripe"
+
+    try:
+        allow_custom_votes = 1 if int(allow_custom_votes) == 1 else 0
+    except Exception:
+        allow_custom_votes = 1
+
+    preset_vote_options = (preset_vote_options or "1,5,10,20,25").strip()
+
+    try:
+        max_votes_per_checkout = max(1, int(max_votes_per_checkout))
+    except Exception:
+        max_votes_per_checkout = 50
 
     conn = _conn()
     conn.execute(
@@ -1070,6 +1098,12 @@ def update_show_admin_settings(
             public_vote_disclosure = ?,
             public_registration_disclosure = ?,
             public_donation_disclosure = ?,
+            voting_mode = ?,
+            payment_mode = ?,
+            external_payment_url = ?,
+            allow_custom_votes = ?,
+            preset_vote_options = ?,
+            max_votes_per_checkout = ?,
             waiver_text = CASE WHEN TRIM(?) <> '' THEN ? ELSE waiver_text END,
             waiver_version = CASE WHEN TRIM(?) <> '' THEN ? ELSE waiver_version END
         WHERE id = ?
@@ -1084,6 +1118,12 @@ def update_show_admin_settings(
             (public_vote_disclosure or "").strip(),
             (public_registration_disclosure or "").strip(),
             (public_donation_disclosure or "").strip(),
+            voting_mode,
+            payment_mode,
+            (external_payment_url or "").strip(),
+            allow_custom_votes,
+            preset_vote_options,
+            max_votes_per_checkout,
             (waiver_text or "").strip(),
             (waiver_text or "").strip(),
             (waiver_version or "").strip(),

@@ -33,10 +33,11 @@ from flask import (
     abort,
     flash,
 )
+
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 from functools import wraps
-
+from sponsorship_blueprint import sponsorship_bp, register_admin_routes
 from database import (
     init_db,
     ensure_default_show,
@@ -131,6 +132,7 @@ if not IS_DEV and not (ADMIN_PASSWORD or ADMIN_PASSWORD_HASH):
     raise RuntimeError("Set ADMIN_PASSWORD_HASH or ADMIN_PASSWORD in the environment.")
 
 app = Flask(__name__)
+app.register_blueprint(sponsorship_bp)
 app.secret_key = FLASK_SECRET or "dev-only-local-secret"
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config.update(
@@ -725,7 +727,7 @@ def require_admin(view_func):
             return redirect(url_for("admin_page", next=request.path))
         return view_func(*args, **kwargs)
     return wrapped
-
+register_admin_routes(app, require_admin, _parse_dollars_to_cents)
 
 def _maybe_auto_close_voting() -> None:
     end_raw = os.getenv("VOTING_END", "").strip()

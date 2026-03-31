@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "Karman Kar Shows & Events" }}</title>
   <script src="https://cdn.tailwindcss.com"></script>
-
   <style>
     .glass { background: rgba(255,255,255,.78); backdrop-filter: blur(10px); }
     .btn { border-radius: 1rem; padding: .85rem 1.1rem; font-weight: 600; }
@@ -19,51 +18,33 @@
     .qr-frame { border: 2px solid #0f172a; background: #fff; }
   </style>
 </head>
-
 <body class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 text-slate-900">
   <header class="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur">
     <div class="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
       <a href="{{ url_for('home') }}" class="flex items-center gap-3">
-        <img
-          src="{{ url_for('static', filename='img/karmankarshows-logo.png') }}"
-          alt="Karman Kar Shows & Events"
-          class="h-10 w-auto"
-        />
+        <img src="{{ url_for('static', filename='img/karmankarshows-logo.png') }}" alt="Karman Kar Shows & Events" class="h-10 w-auto" />
         <div class="hidden sm:block leading-tight">
           <div class="font-semibold">Karman Kar Shows & Events</div>
           <div class="text-xs text-slate-500">Charity • Community • Veterans</div>
         </div>
       </a>
-
       {% if not hide_nav %}
-<nav class="flex items-center gap-1 text-sm">
-  <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('home') }}">Home</a>
-
-  {% if active_show %}
-    <a class="px-3 py-2 rounded-xl hover:bg-slate-100"
-       href="{{ url_for('show_page', slug=active_show['slug']) }}">
-      Current Show
-    </a>
-    <a class="px-3 py-2 rounded-xl hover:bg-slate-100"
-       href="{{ url_for('register_page') }}">
-      Register
-    </a>
-    <a class="px-3 py-2 rounded-xl hover:bg-slate-100"
-       href="{{ url_for('attendee_page', show_slug=active_show['slug']) }}">
-      Attendee QR
-    </a>
-  {% endif %}
-
-  <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('events') }}">Upcoming</a>
-
-  {% if is_admin %}
-    <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('admin_page') }}">Admin</a>
-  {% endif %}
-</nav>
-{% endif %}
+      <nav class="flex items-center gap-1 text-sm">
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('home') }}">Home</a>
+        {% if active_show %}
+          <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('show_page', slug=active_show['slug']) }}">Current Show</a>
+          <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('register_page') }}">Register</a>
+          <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('attendee_page', show_slug=active_show['slug']) }}">Attendee QR</a>
+          <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('sponsorship.public_sponsorship_page', show_slug=active_show['slug']) }}">Sponsor</a>
+        {% endif %}
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('events') }}">Upcoming</a>
+        {% if is_admin %}
+          <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('admin_page') }}">Admin</a>
+        {% endif %}
+      </nav>
+      {% endif %}
     </div>
   </header>
-
   <main class="mx-auto max-w-6xl px-4 py-10">
     {% if get_flashed_messages() %}
       <div class="mb-6 space-y-2">
@@ -74,7 +55,6 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
-
   <footer class="border-t border-slate-200/70 bg-white/70">
     <div class="mx-auto max-w-6xl px-4 py-8 text-sm text-slate-600 flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
       <div>© 2026 Karman Kar Shows & Events</div>

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set title = "Sponsorship Opportunities • " ~ show["title"] %}
+{% block content %}
+<section class="rounded-3xl p-8 glass border border-slate-200 shadow-sm">
+  <div class="max-w-3xl">
+    <div class="text-xs font-semibold text-slate-500">SPONSORSHIP OPPORTUNITIES</div>
+    <h1 class="mt-1 text-4xl font-semibold tracking-tight">{{ show["title"] }}</h1>
+    <p class="mt-3 text-slate-700">Partner with us to support {{ show["benefiting"] or "the event mission" }} while putting your business in front of drivers, attendees, and the community.</p>
+    <div class="mt-7 flex flex-wrap gap-3">
+      <a class="btn btn-primary" href="mailto:karmankarshow@gmail.com?subject={{ ('Sponsorship for ' ~ show['title'])|urlencode }}">Request sponsorship</a>
+      <a class="btn btn-outline" href="{{ url_for('show_page', slug=show['slug']) }}">Back to show page</a>
+    </div>
+  </div>
+</section>
+<section class="mt-8">
+  <div class="text-xs font-semibold text-slate-500">AVAILABLE PACKAGES</div>
+  <h2 class="mt-1 text-2xl font-semibold">Choose a sponsor level</h2>
+  <div class="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+    {% for pkg in sponsorship_packages %}
+      {% if pkg["effective_public_status"] != "hidden" %}
+      <article class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6 relative overflow-hidden">
+        {% if pkg["effective_public_status"] == "sold_out" %}
+          <div class="absolute top-4 right-4 rounded-full bg-red-50 text-red-700 border border-red-200 px-3 py-1 text-xs font-semibold">Sold out</div>
+        {% endif %}
+        <div class="pr-20">
+          <div class="text-xs font-semibold text-slate-500">SPONSOR PACKAGE</div>
+          <h3 class="mt-1 text-2xl font-semibold">{{ pkg["package_name"] }}</h3>
+          <div class="mt-4 text-3xl font-semibold">${{ '%.2f'|format((pkg["price_cents"] or 0) / 100) }}</div>
+        </div>
+        {% if pkg["description"] %}<p class="mt-4 text-sm text-slate-600">{{ pkg["description"] }}</p>{% endif %}
+      </article>
+      {% endif %}
+    {% else %}
+      <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6 text-slate-600">No sponsorship packages are published yet.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
