@@ -34,7 +34,7 @@
       </div>
       <div class="flex flex-wrap gap-2">
         <a class="btn btn-primary" href="{{ url_for('admin_shows') }}">Manage Shows</a>
-        <a class="btn btn-outline" href="{{ url_for('admin_waivers') }}">Waiver Manager</a>
+        <a class="btn btn-outline" href="{{ url_for('sponsorship.admin_sponsors') }}">Sponsors</a>
         <form method="POST" action="{{ url_for('admin_logout') }}">
           <button class="btn btn-outline">Logout</button>
         </form>
