@@ -37,7 +37,7 @@ from flask import (
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash
 from functools import wraps
-from sponsorship_blueprint import sponsorship_bp
+from sponsorship_blueprint import sponsorship_bp, register_admin_routes
 from database import (
     init_db,
     ensure_default_show,
@@ -727,7 +727,7 @@ def require_admin(view_func):
             return redirect(url_for("admin_page", next=request.path))
         return view_func(*args, **kwargs)
     return wrapped
-
+register_admin_routes(app, require_admin, _parse_dollars_to_cents)
 
 def _maybe_auto_close_voting() -> None:
     end_raw = os.getenv("VOTING_END", "").strip()
@@ -2455,6 +2455,69 @@ def admin_waiver_received():
     return redirect(url_for("admin_placeholders"))
 
 
+@app.get("/admin/sponsors")
+@require_admin
+def admin_sponsors():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+    title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
+    return render_template("admin_sponsors.html", show=show, title_sponsor=title_sponsor, sponsors=sponsors)
+
+
+@app.post("/admin/sponsors/add")
+@require_admin
+def admin_sponsors_add():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    name = request.form.get("name", "").strip()
+    logo_path = request.form.get("logo_path", "").strip()
+    website_url = request.form.get("website_url", "").strip()
+    placement = request.form.get("placement", "standard").strip().lower()
+    sort_order_raw = request.form.get("sort_order", "100").strip()
+
+    if not name:
+        flash("Sponsor name is required.", "error")
+        return redirect(url_for("admin_sponsors"))
+
+    try:
+        sort_order = int(sort_order_raw)
+    except ValueError:
+        sort_order = 100
+
+    allowed_placements = {"presenting", "title", "gold", "silver", "standard"}
+    if placement not in allowed_placements:
+        placement = "standard"
+
+    sponsor_id = upsert_sponsor(name=name, logo_path=logo_path, website_url=website_url)
+
+    attach_sponsor_to_show(
+        int(show["id"]),
+        sponsor_id,
+        placement=placement,
+        sort_order=sort_order,
+    )
+
+    flash("Sponsor saved.", "ok")
+    return redirect(url_for("admin_sponsors"))
+
+
+@app.post("/admin/sponsors/remove")
+@require_admin
+def admin_sponsors_remove():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+    sponsor_id_raw = request.form.get("sponsor_id", "").strip()
+    if not sponsor_id_raw.isdigit():
+        return redirect(url_for("admin_sponsors"))
+    sponsor_id = int(sponsor_id_raw)
+    remove_sponsor_from_show(int(show["id"]), sponsor_id)
+    _log_event("admin.sponsor_removed", int(show["id"]), {"sponsor_id": sponsor_id}, actor_type="admin")
+    flash("Sponsor removed from show.", "ok")
+    return redirect(url_for("admin_sponsors"))
 
 
 @app.get("/admin/debug/routes")

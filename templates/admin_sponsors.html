@@ -1,83 +1,184 @@
 {% extends "base.html" %}
 {% set title = "Sponsors • Admin" %}
 {% block content %}
+
 <div class="max-w-7xl">
+
   <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
     <div>
       <div class="text-xs font-semibold text-slate-500">RESTRICTED</div>
       <h1 class="mt-1 text-3xl font-semibold tracking-tight">Sponsors & Package Tracking</h1>
       <p class="mt-2 text-slate-600">{{ show["title"] }}</p>
     </div>
-    <div class="flex flex-wrap gap-2">
-      <a class="btn btn-outline" href="{{ url_for('sponsorship.public_sponsorship_page', show_slug=show['slug']) }}" target="_blank">View public page</a>
-      <a class="btn btn-outline" href="{{ url_for('admin_page') }}">Back to admin</a>
-    </div>
+
+```
+<div class="flex flex-wrap gap-2">
+  <a class="btn btn-outline"
+     href="{{ url_for('sponsorship.public_sponsorship_page', show_slug=show['slug']) }}"
+     target="_blank">
+    View public page
+  </a>
+  <a class="btn btn-outline" href="{{ url_for('admin_page') }}">Back to admin</a>
+</div>
+```
+
   </div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %} <div class="mt-4 space-y-2">
+{% for category, message in messages %} <div class="rounded-xl px-4 py-3 text-sm
+         {% if category == 'error' %}
+           bg-red-50 text-red-700 border border-red-200
+         {% else %}
+           bg-emerald-50 text-emerald-700 border border-emerald-200
+         {% endif %}">
+{{ message }} </div>
+{% endfor %} </div>
+{% endif %}
+{% endwith %}
 
   <div class="mt-6 grid gap-6 xl:grid-cols-[1.15fr,.85fr]">
-    <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
-      <div class="text-xs font-semibold text-slate-500">PACKAGE INVENTORY</div>
-      <h2 class="mt-1 text-xl font-semibold">Sponsorship packages</h2>
-      <p class="mt-2 text-sm text-slate-600">Use this for tiers, trophy sponsors, one-off sponsors, or repeated sponsor items.</p>
-      <div class="mt-5 overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead><tr class="border-b border-slate-200 text-left text-slate-500"><th class="py-3 pr-3">Package</th><th class="py-3 pr-3">Price</th><th class="py-3 pr-3">Capacity</th><th class="py-3 pr-3">Credit</th><th class="py-3 pr-3">Payout</th><th class="py-3">Actions</th></tr></thead>
-          <tbody>
-          {% for pkg in sponsorship_packages %}
-            <tr class="border-b border-slate-100 align-top">
-              <td class="py-4 pr-3">{{ pkg["package_name"] }}</td>
-              <td class="py-4 pr-3">${{ '%.2f'|format((pkg["price_cents"] or 0) / 100) }}</td>
-              <td class="py-4 pr-3">{{ pkg["quantity_sold"] }}/{{ pkg["quantity_total"] }}</td>
-              <td class="py-4 pr-3">{{ pkg["credit_person_name"] or "—" }}</td>
-              <td class="py-4 pr-3">{{ pkg["payout_display"] }}</td>
-              <td class="py-4">
-                <button type="button" class="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50" onclick='fillPackageForm({{ pkg | tojson | safe }})'>Edit</button>
-              </td>
-            </tr>
-          {% else %}
-            <tr><td colspan="6" class="py-6 text-slate-500">No packages yet.</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      <div class="mt-4 text-sm text-slate-600">
-        Current show branch trophy items to create with quantity 1 each:
-        Favorite of Army, Favorite of Navy, Favorite of Air Force, Favorite of Marines, Favorite of Space Force, Favorite of Coast Guard, People Choice.
-      </div>
-    </div>
 
-    <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
-      <div class="text-xs font-semibold text-slate-500">CREATE / UPDATE PACKAGE</div>
-      <h2 class="mt-1 text-xl font-semibold">Package tracking</h2>
-      <form id="package-form" method="POST" action="{{ url_for('sponsorship.admin_save_package') }}" class="mt-4 space-y-4">
-        <input type="hidden" name="package_id" id="package_id">
-        <div><label class="text-sm font-semibold">Package name *</label><input id="package_name" name="package_name" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3" required></div>
-        <div><label class="text-sm font-semibold">Description</label><textarea id="description" name="description" rows="3" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"></textarea></div>
-        <div class="grid gap-4 md:grid-cols-2">
-          <div><label class="text-sm font-semibold">Price ($)</label><input id="price_dollars" name="price_dollars" value="0.00" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"></div>
-          <div><label class="text-sm font-semibold">Total quantity</label><input id="quantity_total" name="quantity_total" value="1" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"></div>
-        </div>
-        <div class="grid gap-4 md:grid-cols-2">
-          <div><label class="text-sm font-semibold">Quantity sold</label><input id="quantity_sold" name="quantity_sold" value="0" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"></div>
-          <div><label class="text-sm font-semibold">Who gets credit</label><input id="credit_person_name" name="credit_person_name" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"></div>
-        </div>
-        <div class="grid gap-4 md:grid-cols-2">
-          <div><label class="text-sm font-semibold">Organizer / show lead</label><input id="organizer_name" name="organizer_name" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"></div>
-          <div><label class="text-sm font-semibold">Agreed percent (%)</label><input id="agreed_percent" name="agreed_percent" value="0" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"></div>
-        </div>
-        <div><label class="text-sm font-semibold">Internal notes</label><textarea id="internal_notes" name="internal_notes" rows="3" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"></textarea></div>
-        <input type="hidden" name="public_status" value="available">
-        <input type="hidden" name="payout_type" value="percent">
-        <input type="hidden" name="agreed_flat_dollars" value="0.00">
-        <input type="hidden" name="payout_status" value="pending">
-        <input type="hidden" name="sort_order" value="100">
-        <div class="flex flex-wrap gap-2"><button class="btn btn-primary" type="submit">Save package</button><button type="button" class="btn btn-outline" onclick="resetPackageForm()">Clear</button></div>
-      </form>
+```
+<!-- LEFT SIDE -->
+<div class="space-y-6">
+
+  <!-- PACKAGES -->
+  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="text-xs font-semibold text-slate-500">PACKAGE INVENTORY</div>
+    <h2 class="mt-1 text-xl font-semibold">Sponsorship packages</h2>
+
+    <div class="mt-5 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-left text-slate-500">
+            <th class="py-3 pr-3">Package</th>
+            <th class="py-3 pr-3">Price</th>
+            <th class="py-3 pr-3">Capacity</th>
+            <th class="py-3 pr-3">Credit</th>
+            <th class="py-3 pr-3">Payout</th>
+            <th class="py-3">Actions</th>
+          </tr>
+        </thead>
+
+        <tbody>
+        {% for pkg in sponsorship_packages %}
+          <tr class="border-b border-slate-100">
+            <td class="py-4 pr-3">{{ pkg["package_name"] }}</td>
+            <td class="py-4 pr-3">${{ '%.2f'|format((pkg["price_cents"] or 0) / 100) }}</td>
+            <td class="py-4 pr-3">{{ pkg["quantity_sold"] }}/{{ pkg["quantity_total"] }}</td>
+            <td class="py-4 pr-3">{{ pkg["credit_person_name"] or "—" }}</td>
+            <td class="py-4 pr-3">{{ pkg["payout_display"] }}</td>
+            <td class="py-4">
+              <button type="button"
+                      class="px-3 py-2 rounded-xl border border-slate-200"
+                      onclick='fillPackageForm({{ pkg | tojson | safe }})'>
+                Edit
+              </button>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="py-6 text-slate-500">No packages yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
+
+  <!-- CURRENT SPONSORS -->
+  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <h2 class="text-xl font-semibold">Current Sponsors</h2>
+
+    <div class="mt-4 space-y-3">
+      {% for s in sponsors %}
+      <div class="flex items-center justify-between border p-3 rounded-xl">
+        <div>
+          <div class="font-semibold">{{ s["name"] }}</div>
+          <div class="text-xs text-slate-500">{{ s["placement"] }}</div>
+        </div>
+
+        <form method="POST"
+              action="{{ url_for('sponsorship.admin_sponsors_remove') }}">
+          <input type="hidden" name="sponsor_id" value="{{ s['id'] }}">
+          <button class="text-red-600 text-sm">Remove</button>
+        </form>
+      </div>
+      {% else %}
+      <div class="text-sm text-slate-500">No sponsors yet</div>
+      {% endfor %}
+    </div>
+  </div>
+
 </div>
+
+<!-- RIGHT SIDE -->
+<div class="space-y-6">
+
+  <!-- PACKAGE FORM -->
+  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <h2 class="text-xl font-semibold">Create / Update Package</h2>
+
+    <form id="package-form"
+          method="POST"
+          action="{{ url_for('sponsorship.admin_save_package') }}"
+          class="mt-4 space-y-4">
+
+      <input type="hidden" name="package_id" id="package_id">
+
+      <input name="package_name" id="package_name" placeholder="Package name" required class="w-full border p-3 rounded-xl">
+      <input name="price_dollars" id="price_dollars" placeholder="Price $" class="w-full border p-3 rounded-xl">
+      <input name="quantity_total" id="quantity_total" placeholder="Total" class="w-full border p-3 rounded-xl">
+      <input name="quantity_sold" id="quantity_sold" placeholder="Sold" class="w-full border p-3 rounded-xl">
+
+      <input name="credit_person_name" id="credit_person_name" placeholder="Sales credit" class="w-full border p-3 rounded-xl">
+      <input name="organizer_name" id="organizer_name" placeholder="Organizer" class="w-full border p-3 rounded-xl">
+      <input name="agreed_percent" id="agreed_percent" placeholder="% payout" class="w-full border p-3 rounded-xl">
+
+      <button class="btn btn-primary w-full">Save Package</button>
+    </form>
+  </div>
+
+  <!-- ADD SPONSOR -->
+  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <h2 class="text-xl font-semibold">Add Sponsor</h2>
+
+    <form method="POST"
+          action="{{ url_for('sponsorship.admin_sponsors_add') }}"
+          class="mt-4 space-y-3">
+
+      <input name="name" placeholder="Sponsor name" required class="w-full border p-3 rounded-xl">
+      <input name="logo_path" placeholder="Logo path" class="w-full border p-3 rounded-xl">
+      <input name="website_url" placeholder="Website" class="w-full border p-3 rounded-xl">
+
+      <select name="placement" class="w-full border p-3 rounded-xl">
+        <option value="presenting">Presenting</option>
+        <option value="title">Title</option>
+        <option value="gold">Gold</option>
+        <option value="silver">Silver</option>
+        <option value="standard">Standard</option>
+      </select>
+
+      <button class="btn btn-outline w-full">Add Sponsor</button>
+    </form>
+  </div>
+
+</div>
+```
+
+  </div>
+</div>
+
 <script>
-function resetPackageForm(){document.getElementById('package-form').reset();document.getElementById('package_id').value='';document.getElementById('price_dollars').value='0.00';document.getElementById('quantity_total').value='1';document.getElementById('quantity_sold').value='0';document.getElementById('agreed_percent').value='0';}
-function fillPackageForm(pkg){document.getElementById('package_id').value=pkg.id||'';document.getElementById('package_name').value=pkg.package_name||'';document.getElementById('description').value=pkg.description||'';document.getElementById('price_dollars').value=(((pkg.price_cents||0)/100).toFixed(2));document.getElementById('quantity_total').value=pkg.quantity_total||1;document.getElementById('quantity_sold').value=pkg.quantity_sold||0;document.getElementById('credit_person_name').value=pkg.credit_person_name||'';document.getElementById('organizer_name').value=pkg.organizer_name||'';document.getElementById('agreed_percent').value=pkg.agreed_percent||0;document.getElementById('internal_notes').value=pkg.internal_notes||'';}
+function fillPackageForm(pkg){
+  document.getElementById('package_id').value = pkg.id || '';
+  document.getElementById('package_name').value = pkg.package_name || '';
+  document.getElementById('price_dollars').value = ((pkg.price_cents || 0) / 100).toFixed(2);
+  document.getElementById('quantity_total').value = pkg.quantity_total || 1;
+  document.getElementById('quantity_sold').value = pkg.quantity_sold || 0;
+  document.getElementById('credit_person_name').value = pkg.credit_person_name || '';
+  document.getElementById('organizer_name').value = pkg.organizer_name || '';
+  document.getElementById('agreed_percent').value = pkg.agreed_percent || 0;
+}
 </script>
+
 {% endblock %}
