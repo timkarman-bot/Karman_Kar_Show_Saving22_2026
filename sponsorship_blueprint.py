@@ -1,23 +1,13 @@
+from pathlib import Path
+from datetime import datetime
+from werkzeug.utils import secure_filename
 from functools import wraps
+from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
-
-from sponsorship_system import (
-    init_sponsorship_tables,
-    list_sponsorship_packages,
-    save_sponsorship_package,
-)
-from database import (
-    get_show_by_slug,
-    get_active_show,
-    get_show_sponsors,
-    upsert_sponsor,
-    attach_sponsor_to_show,
-    remove_sponsor_from_show,
-)
+from database import attach_sponsor_to_show, get_active_show, get_show_by_slug, get_show_sponsors, remove_sponsor_from_show, upsert_sponsor
+from sponsorship_system import init_sponsorship_tables, list_salespeople, get_salesperson, list_sponsorship_catalog, list_sponsorship_sales, save_catalog_item, save_salesperson, save_sponsorship_sale
 
 sponsorship_bp = Blueprint("sponsorship", __name__)
-
 
 def require_admin_bp(view_func):
     @wraps(view_func)
@@ -27,145 +17,134 @@ def require_admin_bp(view_func):
         return view_func(*args, **kwargs)
     return wrapped
 
-
 def parse_dollars_to_cents(value: str, default_cents: int = 0) -> int:
     try:
         return max(0, int(round(float((value or "").strip()) * 100)))
     except Exception:
         return default_cents
 
+def _logo_upload_dir() -> Path:
+    base = Path(current_app.static_folder) / "img" / "sponsors" / "uploads"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+def _save_logo(file_storage):
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        return ""
+    filename = secure_filename(file_storage.filename)
+    if not filename:
+        return ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in {"png","jpg","jpeg","webp","svg"}:
+        return ""
+    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    final_name = f"sponsor-{stamp}-{filename}"
+    save_path = _logo_upload_dir() / final_name
+    file_storage.save(save_path)
+    return f"img/sponsors/uploads/{final_name}"
 
 @sponsorship_bp.before_app_request
 def _init_tables() -> None:
     init_sponsorship_tables()
 
-
 @sponsorship_bp.get("/sponsorship/<show_slug>")
 def public_sponsorship_page(show_slug: str):
     show = get_show_by_slug(show_slug)
-    if not show:
-        return "Show not found.", 404
-
+    if not show: return "Show not found.", 404
     title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
-    sponsorship_packages = list_sponsorship_packages(int(show["id"]))
+    return render_template("sponsorship.html", show=show, title_sponsor=title_sponsor, sponsors=sponsors, sponsorship_catalog=list_sponsorship_catalog(int(show["id"])), salespeople=list_salespeople(active_only=True))
 
-    return render_template(
-        "sponsorship.html",
-        show=show,
-        title_sponsor=title_sponsor,
-        sponsors=sponsors,
-        sponsorship_packages=sponsorship_packages,
-    )
-
+@sponsorship_bp.post("/sponsorship/<show_slug>/submit")
+def public_sponsorship_submit(show_slug: str):
+    show = get_show_by_slug(show_slug)
+    if not show: return "Show not found.", 404
+    catalog_id_raw = request.form.get("catalog_id", "").strip()
+    catalog_id = int(catalog_id_raw) if catalog_id_raw.isdigit() else None
+    salesperson_id_raw = request.form.get("salesperson_id", "").strip()
+    salesperson_id = int(salesperson_id_raw) if salesperson_id_raw.isdigit() else None
+    salesperson = get_salesperson(salesperson_id) if salesperson_id else None
+    commission_percent = float((salesperson or {}).get("default_commission_percent") or 0)
+    logo_path = _save_logo(request.files.get("logo_file"))
+    logo_pending = 1 if request.form.get("logo_pending") in {"1","on"} else 0
+    save_sponsorship_sale(sale_id=None, show_id=int(show["id"]), catalog_id=catalog_id, sponsor_business_name=request.form.get("sponsor_business_name","").strip(), contact_name=request.form.get("contact_name","").strip(), phone=request.form.get("phone","").strip(), email=request.form.get("email","").strip(), website_url=request.form.get("website_url","").strip(), salesperson_id=salesperson_id, commission_percent=commission_percent, logo_path=logo_path, logo_pending=logo_pending, placement=request.form.get("placement","standard").strip(), payment_status=request.form.get("payment_status","pending").strip(), status="sold" if request.form.get("payment_status","pending").strip()=="paid" else "open", notes=request.form.get("notes","").strip())
+    if request.form.get("attach_to_show") == "1":
+        sponsor_name = request.form.get("sponsor_business_name","").strip()
+        if sponsor_name:
+            sponsor_id = upsert_sponsor(name=sponsor_name, logo_path=logo_path, website_url=request.form.get("website_url","").strip())
+            attach_sponsor_to_show(int(show["id"]), sponsor_id, placement=request.form.get("placement","standard").strip(), sort_order=100)
+    flash("Sponsorship submission saved.", "ok")
+    return redirect(url_for("sponsorship.public_sponsorship_page", show_slug=show_slug))
 
 @sponsorship_bp.get("/admin/sponsors")
 @require_admin_bp
 def admin_sponsors():
     show = get_active_show()
-    if not show:
-        return "No active show.", 500
-
+    if not show: return "No active show.", 500
     title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
-    sponsorship_packages = list_sponsorship_packages(int(show["id"]))
+    return render_template("admin_sponsors.html", show=show, title_sponsor=title_sponsor, sponsors=sponsors, sponsorship_catalog=list_sponsorship_catalog(int(show["id"])), sponsorship_sales=list_sponsorship_sales(int(show["id"])), salespeople=list_salespeople(active_only=False))
 
-    return render_template(
-        "admin_sponsors.html",
-        show=show,
-        title_sponsor=title_sponsor,
-        sponsors=sponsors,
-        sponsorship_packages=sponsorship_packages,
-    )
+@sponsorship_bp.post("/admin/salespeople/save")
+@require_admin_bp
+def admin_save_salesperson():
+    salesperson_id_raw = request.form.get("salesperson_id", "").strip()
+    salesperson_id = int(salesperson_id_raw) if salesperson_id_raw.isdigit() else None
+    save_salesperson(salesperson_id=salesperson_id, name=request.form.get("name","").strip(), default_commission_percent=float((request.form.get("default_commission_percent","0") or "0").strip()), is_active=1 if request.form.get("is_active","1") in {"1","on"} else 0, notes=request.form.get("notes","").strip())
+    flash("Salesperson saved.", "ok")
+    return redirect(url_for("sponsorship.admin_sponsors"))
 
+@sponsorship_bp.post("/admin/catalog/save")
+@require_admin_bp
+def admin_save_catalog():
+    show = get_active_show()
+    if not show: return "No active show.", 500
+    catalog_id_raw = request.form.get("catalog_id", "").strip()
+    catalog_id = int(catalog_id_raw) if catalog_id_raw.isdigit() else None
+    save_catalog_item(catalog_id=catalog_id, show_id=int(show["id"]), package_name=request.form.get("package_name","").strip(), description=request.form.get("description","").strip(), price_cents=parse_dollars_to_cents(request.form.get("price_dollars","0")), total_available=max(0, int(request.form.get("total_available","1") or "1")), sort_order=max(0, int(request.form.get("sort_order","100") or "100")), is_active=1 if request.form.get("is_active","1") in {"1","on"} else 0, is_public=1 if request.form.get("is_public","1") in {"1","on"} else 0)
+    flash("Sponsorship type saved.", "ok")
+    return redirect(url_for("sponsorship.admin_sponsors"))
+
+@sponsorship_bp.post("/admin/sponsorship-sales/save")
+@require_admin_bp
+def admin_save_sponsorship_sale():
+    show = get_active_show()
+    if not show: return "No active show.", 500
+    sale_id_raw = request.form.get("sale_id", "").strip()
+    sale_id = int(sale_id_raw) if sale_id_raw.isdigit() else None
+    catalog_id_raw = request.form.get("catalog_id", "").strip()
+    catalog_id = int(catalog_id_raw) if catalog_id_raw.isdigit() else None
+    salesperson_id_raw = request.form.get("salesperson_id", "").strip()
+    salesperson_id = int(salesperson_id_raw) if salesperson_id_raw.isdigit() else None
+    salesperson = get_salesperson(salesperson_id) if salesperson_id else None
+    commission_percent = float((salesperson or {}).get("default_commission_percent") or 0)
+    logo_path = _save_logo(request.files.get("logo_file")) or request.form.get("existing_logo_path", "").strip()
+    logo_pending = 1 if request.form.get("logo_pending") in {"1","on"} else 0
+    save_sponsorship_sale(sale_id=sale_id, show_id=int(show["id"]), catalog_id=catalog_id, sponsor_business_name=request.form.get("sponsor_business_name","").strip(), contact_name=request.form.get("contact_name","").strip(), phone=request.form.get("phone","").strip(), email=request.form.get("email","").strip(), website_url=request.form.get("website_url","").strip(), salesperson_id=salesperson_id, commission_percent=commission_percent, logo_path=logo_path, logo_pending=logo_pending, placement=request.form.get("placement","standard").strip(), payment_status=request.form.get("payment_status","pending").strip(), status=request.form.get("status","open").strip(), notes=request.form.get("notes","").strip())
+    if request.form.get("attach_to_show") == "1":
+        sponsor_name = request.form.get("sponsor_business_name","").strip()
+        if sponsor_name:
+            sponsor_id = upsert_sponsor(name=sponsor_name, logo_path=logo_path, website_url=request.form.get("website_url","").strip())
+            attach_sponsor_to_show(int(show["id"]), sponsor_id, placement=request.form.get("placement","standard").strip(), sort_order=100)
+    flash("Sponsorship sale saved.", "ok")
+    return redirect(url_for("sponsorship.admin_sponsors"))
 
 @sponsorship_bp.post("/admin/sponsors/add")
 @require_admin_bp
 def admin_sponsors_add():
     show = get_active_show()
-    if not show:
-        return "No active show.", 500
-
-    name = request.form.get("name", "").strip()
-    logo_path = request.form.get("logo_path", "").strip()
-    website_url = request.form.get("website_url", "").strip()
-    placement = request.form.get("placement", "standard").strip().lower()
-    sort_order_raw = request.form.get("sort_order", "100").strip()
-
-    if not name:
-        flash("Sponsor name is required.", "error")
-        return redirect(url_for("sponsorship.admin_sponsors"))
-
-    try:
-        sort_order = int(sort_order_raw)
-    except ValueError:
-        sort_order = 100
-
-    allowed_placements = {"presenting", "title", "gold", "silver", "standard"}
-    if placement not in allowed_placements:
-        placement = "standard"
-
-    sponsor_id = upsert_sponsor(
-        name=name,
-        logo_path=logo_path,
-        website_url=website_url,
-    )
-
-    attach_sponsor_to_show(
-        int(show["id"]),
-        sponsor_id,
-        placement=placement,
-        sort_order=sort_order,
-    )
-
+    if not show: return "No active show.", 500
+    logo_path = _save_logo(request.files.get("logo_file")) or request.form.get("logo_path", "").strip()
+    sponsor_id = upsert_sponsor(name=request.form.get("name","").strip(), logo_path=logo_path, website_url=request.form.get("website_url","").strip())
+    attach_sponsor_to_show(int(show["id"]), sponsor_id, placement=request.form.get("placement","standard").strip().lower(), sort_order=max(0, int(request.form.get("sort_order","100") or "100")))
     flash("Sponsor saved.", "ok")
     return redirect(url_for("sponsorship.admin_sponsors"))
-
 
 @sponsorship_bp.post("/admin/sponsors/remove")
 @require_admin_bp
 def admin_sponsors_remove():
     show = get_active_show()
-    if not show:
-        return "No active show.", 500
-
+    if not show: return "No active show.", 500
     sponsor_id_raw = request.form.get("sponsor_id", "").strip()
-    if not sponsor_id_raw.isdigit():
-        return redirect(url_for("sponsorship.admin_sponsors"))
-
-    sponsor_id = int(sponsor_id_raw)
-    remove_sponsor_from_show(int(show["id"]), sponsor_id)
-
+    if sponsor_id_raw.isdigit():
+        remove_sponsor_from_show(int(show["id"]), int(sponsor_id_raw))
     flash("Sponsor removed from show.", "ok")
-    return redirect(url_for("sponsorship.admin_sponsors"))
-
-
-@sponsorship_bp.post("/admin/sponsorship-packages/save")
-@require_admin_bp
-def admin_save_package():
-    show = get_active_show()
-    if not show:
-        return "No active show.", 500
-
-    package_id_raw = request.form.get("package_id", "").strip()
-    package_id = int(package_id_raw) if package_id_raw.isdigit() else None
-
-    try:
-        agreed_percent = float((request.form.get("agreed_percent", "0") or "0").strip())
-    except Exception:
-        agreed_percent = 0.0
-
-    save_sponsorship_package(
-        show_id=int(show["id"]),
-        package_id=package_id,
-        package_name=request.form.get("package_name", "").strip(),
-        description=request.form.get("description", "").strip(),
-        price_cents=parse_dollars_to_cents(request.form.get("price_dollars", "0")),
-        quantity_total=max(0, int(request.form.get("quantity_total", "1") or "1")),
-        quantity_sold=max(0, int(request.form.get("quantity_sold", "0") or "0")),
-        credit_person_name=request.form.get("credit_person_name", "").strip(),
-        organizer_name=request.form.get("organizer_name", "").strip(),
-        agreed_percent=agreed_percent,
-        internal_notes=request.form.get("internal_notes", "").strip(),
-    )
-
-    flash("Sponsorship package saved.", "ok")
     return redirect(url_for("sponsorship.admin_sponsors"))

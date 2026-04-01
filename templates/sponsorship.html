@@ -1,38 +1,64 @@
 {% extends "base.html" %}
-{% set title = "Sponsorship Opportunities • " ~ show["title"] %}
+{% set title = "Sponsorship • " ~ show["title"] %}
 {% block content %}
-<section class="rounded-3xl p-8 glass border border-slate-200 shadow-sm">
-  <div class="max-w-3xl">
-    <div class="text-xs font-semibold text-slate-500">SPONSORSHIP OPPORTUNITIES</div>
+<div class="max-w-6xl">
+  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
+    <div class="text-xs font-semibold text-slate-500">SPONSOR THIS EVENT</div>
     <h1 class="mt-1 text-4xl font-semibold tracking-tight">{{ show["title"] }}</h1>
-    <p class="mt-3 text-slate-700">Partner with us to support {{ show["benefiting"] or "the event mission" }} while putting your business in front of drivers, attendees, and the community.</p>
-    <div class="mt-7 flex flex-wrap gap-3">
-      <a class="btn btn-primary" href="mailto:karmankarshow@gmail.com?subject={{ ('Sponsorship for ' ~ show['title'])|urlencode }}">Request sponsorship</a>
-      <a class="btn btn-outline" href="{{ url_for('show_page', slug=show['slug']) }}">Back to show page</a>
+    <p class="mt-3 text-slate-700">Select a sponsorship, enter sponsor information, choose the salesperson, and submit the record. Commission is tracked in the back office only.</p>
+  </div>
+
+  <div class="mt-6 grid gap-6 xl:grid-cols-[1fr,.95fr]">
+    <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+      <div class="text-xs font-semibold text-slate-500">AVAILABLE SPONSORSHIPS</div>
+      <h2 class="mt-1 text-2xl font-semibold">Current availability</h2>
+      <div class="mt-5 grid gap-4 md:grid-cols-2">
+        {% for item in sponsorship_catalog %}
+        <div class="rounded-2xl border border-slate-200 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="font-semibold">{{ item["package_name"] }}</div>
+            {% if item["effective_public_status"] == "sold_out" %}
+            <div class="text-xs rounded-full border border-red-200 bg-red-50 text-red-700 px-2 py-1">Sold out</div>
+            {% else %}
+            <div class="text-xs rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 px-2 py-1">{{ item["left_count"] }} left</div>
+            {% endif %}
+          </div>
+          <div class="mt-3 text-3xl font-semibold">${{ '%.2f'|format((item["price_cents"] or 0) / 100) }}</div>
+          {% if item["description"] %}<div class="mt-2 text-sm text-slate-600">{{ item["description"] }}</div>{% endif %}
+        </div>
+        {% else %}
+        <div class="text-sm text-slate-500">No sponsorships published yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+      <div class="text-xs font-semibold text-slate-500">SPONSORSHIP FORM</div>
+      <h2 class="mt-1 text-2xl font-semibold">Submit sponsorship</h2>
+      <form method="POST" action="{{ url_for('sponsorship.public_sponsorship_submit', show_slug=show['slug']) }}" enctype="multipart/form-data" class="mt-5 space-y-3">
+        <input name="sponsor_business_name" placeholder="Sponsor business name" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <input name="contact_name" placeholder="Contact name" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <input name="phone" placeholder="Phone" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <input name="email" placeholder="Email" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <input name="website_url" placeholder="Website URL" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <select name="catalog_id" class="w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+          <option value="">Select sponsor level</option>
+          {% for item in sponsorship_catalog if item["effective_public_status"] != "sold_out" %}<option value="{{ item['id'] }}">{{ item["package_name"] }} — ${{ '%.2f'|format((item["price_cents"] or 0) / 100) }}</option>{% endfor %}
+        </select>
+        <select name="salesperson_id" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <option value="">Salesperson</option>
+          {% for sp in salespeople %}<option value="{{ sp['id'] }}">{{ sp["name"] }}</option>{% endfor %}
+        </select>
+        <select name="placement" class="w-full rounded-2xl border border-slate-200 px-4 py-3"><option value="presenting">Presenting</option><option value="title">Title</option><option value="gold">Gold</option><option value="silver">Silver</option><option value="standard" selected>Standard</option></select>
+        <input type="file" name="logo_file" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="logo_pending" value="1"> Logo will be provided later</label>
+        <select name="payment_status" class="w-full rounded-2xl border border-slate-200 px-4 py-3"><option value="pending">Pending payment</option><option value="invoice_sent">Invoice sent</option><option value="paid">Paid</option><option value="manual">Manual</option></select>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="attach_to_show" value="1"> Add sponsor/logo to show page now</label>
+        <textarea name="notes" rows="3" placeholder="Notes" class="w-full rounded-2xl border border-slate-200 px-4 py-3"></textarea>
+        <button class="btn btn-primary w-full" type="submit">Save sponsorship</button>
+      </form>
+      <div class="mt-4 text-xs text-slate-500">This version records sponsorship and payment status in the platform. Live Stripe sponsor checkout is not wired in this bundle yet.</div>
     </div>
   </div>
-</section>
-<section class="mt-8">
-  <div class="text-xs font-semibold text-slate-500">AVAILABLE PACKAGES</div>
-  <h2 class="mt-1 text-2xl font-semibold">Choose a sponsor level</h2>
-  <div class="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-    {% for pkg in sponsorship_packages %}
-      {% if pkg["effective_public_status"] != "hidden" %}
-      <article class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6 relative overflow-hidden">
-        {% if pkg["effective_public_status"] == "sold_out" %}
-          <div class="absolute top-4 right-4 rounded-full bg-red-50 text-red-700 border border-red-200 px-3 py-1 text-xs font-semibold">Sold out</div>
-        {% endif %}
-        <div class="pr-20">
-          <div class="text-xs font-semibold text-slate-500">SPONSOR PACKAGE</div>
-          <h3 class="mt-1 text-2xl font-semibold">{{ pkg["package_name"] }}</h3>
-          <div class="mt-4 text-3xl font-semibold">${{ '%.2f'|format((pkg["price_cents"] or 0) / 100) }}</div>
-        </div>
-        {% if pkg["description"] %}<p class="mt-4 text-sm text-slate-600">{{ pkg["description"] }}</p>{% endif %}
-      </article>
-      {% endif %}
-    {% else %}
-      <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6 text-slate-600">No sponsorship packages are published yet.</div>
-    {% endfor %}
-  </div>
-</section>
+</div>
 {% endblock %}
