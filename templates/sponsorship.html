@@ -5,7 +5,7 @@
   <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
     <div class="text-xs font-semibold text-slate-500">SPONSOR THIS EVENT</div>
     <h1 class="mt-1 text-4xl font-semibold tracking-tight">{{ show["title"] }}</h1>
-    <p class="mt-3 text-slate-700">Select a sponsorship, enter sponsor information, choose the salesperson, and submit the record. Commission is tracked in the back office only.</p>
+    <p class="mt-3 text-slate-700">Complete the sponsorship form below. Card payments are handled securely through Stripe and receipts are sent automatically by Stripe. Need to pay later? Choose invoice request or salesperson check collection.</p>
   </div>
 
   <div class="mt-6 grid gap-6 xl:grid-cols-[1fr,.95fr]">
@@ -24,7 +24,9 @@
             {% endif %}
           </div>
           <div class="mt-3 text-3xl font-semibold">${{ '%.2f'|format((item["price_cents"] or 0) / 100) }}</div>
-          {% if item["description"] %}<div class="mt-2 text-sm text-slate-600">{{ item["description"] }}</div>{% endif %}
+          {% if item["description"] %}
+          <div class="mt-2 text-sm text-slate-600">{{ item["description"] }}</div>
+          {% endif %}
         </div>
         {% else %}
         <div class="text-sm text-slate-500">No sponsorships published yet.</div>
@@ -33,32 +35,82 @@
     </div>
 
     <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
-      <div class="text-xs font-semibold text-slate-500">SPONSORSHIP FORM</div>
+      <div class="text-xs font-semibold text-slate-500">SPONSOR FORM</div>
       <h2 class="mt-1 text-2xl font-semibold">Submit sponsorship</h2>
-      <form method="POST" action="{{ url_for('sponsorship.public_sponsorship_submit', show_slug=show['slug']) }}" enctype="multipart/form-data" class="mt-5 space-y-3">
+
+      <form method="POST" action="{{ url_for('sponsorship_public_submit') }}" enctype="multipart/form-data" class="mt-5 space-y-3">
+        <input type="hidden" name="show_slug" value="{{ show['slug'] }}">
+
         <input name="sponsor_business_name" placeholder="Sponsor business name" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
-        <input name="contact_name" placeholder="Contact name" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
-        <input name="phone" placeholder="Phone" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
-        <input name="email" placeholder="Email" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <input name="contact_name" placeholder="Contact name" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <input name="phone" placeholder="Phone" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <input name="email" placeholder="Email" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+
+        <input name="mailing_address_line1" placeholder="Mailing address line 1" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <input name="mailing_address_line2" placeholder="Mailing address line 2" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <input name="mailing_city" placeholder="City" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <input name="mailing_state" placeholder="State" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <input name="mailing_zip" placeholder="ZIP" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+        </div>
+
         <input name="website_url" placeholder="Website URL" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+
         <select name="catalog_id" class="w-full rounded-2xl border border-slate-200 px-4 py-3" required>
           <option value="">Select sponsor level</option>
-          {% for item in sponsorship_catalog if item["effective_public_status"] != "sold_out" %}<option value="{{ item['id'] }}">{{ item["package_name"] }} — ${{ '%.2f'|format((item["price_cents"] or 0) / 100) }}</option>{% endfor %}
+          {% for item in sponsorship_catalog if item["effective_public_status"] != "sold_out" %}
+          <option value="{{ item['id'] }}">{{ item["package_name"] }} — ${{ '%.2f'|format((item["price_cents"] or 0) / 100) }}</option>
+          {% endfor %}
         </select>
+
         <select name="salesperson_id" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
           <option value="">Salesperson</option>
-          {% for sp in salespeople %}<option value="{{ sp['id'] }}">{{ sp["name"] }}</option>{% endfor %}
+          {% for sp in salespeople %}
+          <option value="{{ sp['id'] }}">{{ sp["name"] }}</option>
+          {% endfor %}
         </select>
-        <select name="placement" class="w-full rounded-2xl border border-slate-200 px-4 py-3"><option value="presenting">Presenting</option><option value="title">Title</option><option value="gold">Gold</option><option value="silver">Silver</option><option value="standard" selected>Standard</option></select>
+
+        <select name="placement" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <option value="presenting">Presenting</option>
+          <option value="title">Title</option>
+          <option value="gold">Gold</option>
+          <option value="silver">Silver</option>
+          <option value="standard" selected>Standard</option>
+        </select>
+
+        <select id="payment_method_choice" name="payment_method_choice" class="w-full rounded-2xl border border-slate-200 px-4 py-3" required>
+          <option value="card" selected>Pay now by card</option>
+          <option value="check">Pay by check / salesperson collected</option>
+          <option value="invoice">Request invoice</option>
+        </select>
+
         <input type="file" name="logo_file" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="logo_pending" value="1"> Logo will be provided later</label>
-        <select name="payment_status" class="w-full rounded-2xl border border-slate-200 px-4 py-3"><option value="pending">Pending payment</option><option value="invoice_sent">Invoice sent</option><option value="paid">Paid</option><option value="manual">Manual</option></select>
-        <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="attach_to_show" value="1"> Add sponsor/logo to show page now</label>
-        <textarea name="notes" rows="3" placeholder="Notes" class="w-full rounded-2xl border border-slate-200 px-4 py-3"></textarea>
-        <button class="btn btn-primary w-full" type="submit">Save sponsorship</button>
+        <textarea name="notes" rows="3" placeholder="Notes or special instructions" class="w-full rounded-2xl border border-slate-200 px-4 py-3"></textarea>
+
+        <button id="submit_button" class="btn btn-primary w-full" type="submit">Continue to payment</button>
       </form>
-      <div class="mt-4 text-xs text-slate-500">This version records sponsorship and payment status in the platform. Live Stripe sponsor checkout is not wired in this bundle yet.</div>
+
+      <div class="mt-4 text-xs text-slate-500">Card payments generate an automatic Stripe receipt. Invoice requests and check sales notify our team for follow-up. Customer service: info@karmankarshowsandevents.com</div>
     </div>
   </div>
 </div>
+
+<script>
+  (function () {
+    const select = document.getElementById("payment_method_choice");
+    const button = document.getElementById("submit_button");
+    if (!select || !button) return;
+
+    function syncButton() {
+      const val = select.value;
+      if (val === "card") button.textContent = "Continue to payment";
+      else if (val === "invoice") button.textContent = "Request invoice";
+      else button.textContent = "Submit check sponsorship";
+    }
+
+    select.addEventListener("change", syncButton);
+    syncButton();
+  })();
+</script>
 {% endblock %}

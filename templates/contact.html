@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% set title = "Contact • Karman Kar Shows & Events, LLC" %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
+    <div class="text-xs font-semibold text-slate-500">CUSTOMER SERVICE</div>
+    <h1 class="mt-1 text-3xl font-semibold tracking-tight">Contact Karman Kar Shows & Events, LLC</h1>
+    <p class="mt-3 text-slate-700">Use this form to send a question to our customer service team. Messages are sent to <span class="font-semibold">info@karmankarshowsandevents.com</span>.</p>
+    <form method="POST" action="{{ url_for('contact_submit') }}" class="mt-6 space-y-4">
+      <input name="name" placeholder="Your name" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+      <input name="email" placeholder="Your email" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+      <input name="subject" placeholder="Subject" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+      <textarea name="body" rows="8" placeholder="How can we help?" required class="w-full rounded-2xl border border-slate-200 px-4 py-3"></textarea>
+      <button class="btn btn-primary w-full" type="submit">Send message</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

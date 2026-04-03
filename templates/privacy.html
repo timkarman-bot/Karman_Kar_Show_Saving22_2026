@@ -1,87 +1,45 @@
 {% extends "base.html" %}
-{% set title = "Privacy Policy • Karman Kar Shows & Events" %}
+{% set title = "Privacy Policy • Karman Kar Shows & Events, LLC" %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto">
-
   <h1 class="text-3xl font-semibold mb-6">Privacy Policy</h1>
+  <p class="mb-4 text-slate-600">Effective Date: {{ current_year or "2026" }}</p>
 
-  <p class="mb-4 text-slate-600">
-    Effective Date: {{ current_year or "2026" }}
-  </p>
-
-  <p class="mb-6">
-    Karman Kar Shows & Events ("we", "our", or "us") respects your privacy and is committed to protecting your information. This Privacy Policy explains how we collect, use, and protect your information when you interact with our website, register for events, participate in voting, or become a sponsor.
-  </p>
+  <p class="mb-6">Karman Kar Shows & Events, LLC ("we", "our", or "us") respects your privacy and is committed to protecting your information. This Privacy Policy explains how we collect, use, and protect your information when you interact with our website, register for events, participate in voting, become a sponsor, or contact our team.</p>
 
   <h2 class="text-xl font-semibold mt-8 mb-2">Information We Collect</h2>
-  <p class="mb-4">
-    We may collect the following types of information:
-  </p>
   <ul class="list-disc pl-6 mb-6 space-y-1">
     <li>Name, email address, phone number, and business information</li>
     <li>Vehicle registration information for event participants</li>
-    <li>Sponsorship information including business name, contact details, and logo</li>
+    <li>Sponsorship information including business name, contact details, mailing address, and logo</li>
+    <li>Customer service messages submitted through our contact form</li>
     <li>Payment-related information processed securely through our payment provider</li>
   </ul>
 
   <h2 class="text-xl font-semibold mt-8 mb-2">How We Use Your Information</h2>
-  <p class="mb-4">
-    Your information is used to:
-  </p>
   <ul class="list-disc pl-6 mb-6 space-y-1">
     <li>Manage event registrations and attendance</li>
     <li>Process sponsorships and display sponsor recognition</li>
     <li>Process voting donations and event-related payments</li>
-    <li>Communicate updates about events and sponsorships</li>
+    <li>Communicate updates about events, sponsorships, invoices, and customer service requests</li>
     <li>Improve our services and user experience</li>
   </ul>
 
   <h2 class="text-xl font-semibold mt-8 mb-2">Payments and Security</h2>
-  <p class="mb-6">
-    All payments are processed securely through <strong>Stripe</strong>. We do not store or have direct access to your full payment information, including credit card numbers. Stripe may collect and process your payment information in accordance with their own privacy policy.
-  </p>
+  <p class="mb-6">All card payments are processed securely through <strong>Stripe</strong>. We do not store or have direct access to your full payment information, including credit card numbers. Stripe may collect and process your payment information according to its own privacy policy.</p>
 
   <h2 class="text-xl font-semibold mt-8 mb-2">Sponsorship and Public Information</h2>
-  <p class="mb-6">
-    Sponsors may have their business name, logo, and website publicly displayed as part of event promotion, marketing materials, and on our website. By submitting sponsorship information, you consent to this use.
-  </p>
+  <p class="mb-6">Sponsors may have their business name, logo, and website publicly displayed as part of event promotion, marketing materials, and on our website. By submitting sponsorship information, you consent to this use.</p>
 
   <h2 class="text-xl font-semibold mt-8 mb-2">Sharing of Information</h2>
-  <p class="mb-6">
-    We do not sell or rent your personal information. We may share information only as necessary to:
-  </p>
-  <ul class="list-disc pl-6 mb-6 space-y-1">
-    <li>Process payments through Stripe</li>
-    <li>Comply with legal obligations</li>
-    <li>Protect the rights and safety of our organization and participants</li>
-  </ul>
-
-  <h2 class="text-xl font-semibold mt-8 mb-2">Data Retention</h2>
-  <p class="mb-6">
-    We retain information as needed to manage events, maintain financial records, and comply with legal requirements.
-  </p>
-
-  <h2 class="text-xl font-semibold mt-8 mb-2">Your Rights</h2>
-  <p class="mb-6">
-    You may request to update or remove your information by contacting us using the information below.
-  </p>
+  <p class="mb-6">We do not sell or rent your personal information. We may share information only as necessary to process payments through Stripe, comply with legal obligations, or protect the rights and safety of our organization and participants.</p>
 
   <h2 class="text-xl font-semibold mt-8 mb-2">Contact Information</h2>
-  <p class="mb-6">
-    If you have any questions about this Privacy Policy or how your information is used, please contact:
-  </p>
-
   <div class="rounded-2xl border border-slate-200 p-4 bg-white">
-    <div class="font-semibold">Karman Kar Shows & Events</div>
+    <div class="font-semibold">Karman Kar Shows & Events, LLC</div>
     <div>Email: info@karmankarshowsandevents.com</div>
     <div>Phone: 918-809-2206</div>
   </div>
-
-  <h2 class="text-xl font-semibold mt-8 mb-2">Updates to This Policy</h2>
-  <p class="mb-6">
-    We may update this Privacy Policy from time to time. Any updates will be posted on this page with a revised effective date.
-  </p>
-
 </div>
 {% endblock %}
