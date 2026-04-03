@@ -38,7 +38,7 @@
       <div class="text-xs font-semibold text-slate-500">SPONSOR FORM</div>
       <h2 class="mt-1 text-2xl font-semibold">Submit sponsorship</h2>
 
-      <form method="POST" action="{{ url_for('sponsorship_public_submit') }}" enctype="multipart/form-data" class="mt-5 space-y-3">
+      <form method="POST" action="{{ url_for('sponsorship_public_submit') }}" enctype="multipart/form-data">
         <input type="hidden" name="show_slug" value="{{ show['slug'] }}">
 
         <input name="sponsor_business_name" placeholder="Sponsor business name" required class="w-full rounded-2xl border border-slate-200 px-4 py-3">
