@@ -16,6 +16,17 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
+def _d(row: sqlite3.Row) -> Dict[str, Any]:
+    return {k: row[k] for k in row.keys()}
+
+
+def _ensure_column(cur, table_name: str, column_name: str, column_sql: str) -> None:
+    rows = cur.execute(f"PRAGMA table_info({table_name})").fetchall()
+    existing = {row[1] for row in rows}
+    if column_name not in existing:
+        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
+
+
 def init_sponsorship_tables() -> None:
     conn = _conn()
     cur = conn.cursor()
@@ -99,6 +110,13 @@ def init_sponsorship_tables() -> None:
         )"""
     )
 
+    # Safe schema healing for older Railway SQLite databases
+    _ensure_column(cur, "sponsorship_sales", "payment_method_type", "TEXT NOT NULL DEFAULT 'manual'")
+    _ensure_column(cur, "sponsorship_sales", "stripe_checkout_session_id", "TEXT")
+    _ensure_column(cur, "sponsorship_sales", "stripe_invoice_id", "TEXT")
+    _ensure_column(cur, "sponsorship_sales", "stripe_customer_id", "TEXT")
+    _ensure_column(cur, "sponsorship_sales", "receipt_url", "TEXT")
+
     for sql in [
         "CREATE INDEX IF NOT EXISTS idx_sponsorship_catalog_show_id ON sponsorship_catalog(show_id)",
         "CREATE INDEX IF NOT EXISTS idx_sponsorship_sales_show_id ON sponsorship_sales(show_id)",
@@ -108,25 +126,8 @@ def init_sponsorship_tables() -> None:
     ]:
         cur.execute(sql)
 
-    # Safe migrations for older DBs
-    for sql in [
-        "ALTER TABLE sponsorship_sales ADD COLUMN payment_method_type TEXT NOT NULL DEFAULT 'manual'",
-        "ALTER TABLE sponsorship_sales ADD COLUMN stripe_checkout_session_id TEXT",
-        "ALTER TABLE sponsorship_sales ADD COLUMN stripe_invoice_id TEXT",
-        "ALTER TABLE sponsorship_sales ADD COLUMN stripe_customer_id TEXT",
-        "ALTER TABLE sponsorship_sales ADD COLUMN receipt_url TEXT",
-    ]:
-        try:
-            cur.execute(sql)
-        except Exception:
-            pass
-
     conn.commit()
     conn.close()
-
-
-def _d(row: sqlite3.Row) -> Dict[str, Any]:
-    return {k: row[k] for k in row.keys()}
 
 
 def list_salespeople(active_only: bool = False) -> List[Dict[str, Any]]:
@@ -484,7 +485,6 @@ def mark_sponsorship_sale_paid_by_checkout_session(session_id: str, receipt_url:
     return sale_id
 
 
-# Backward-compat wrappers
 def list_sponsorship_packages(show_id: int) -> List[Dict[str, Any]]:
     rows = list_sponsorship_catalog(show_id)
     return [
