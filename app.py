@@ -1993,7 +1993,49 @@ def admin_page():
         registered_cars=registered_cars,
     )
 
+@app.get("/admin/car-search")
+@require_admin
+def admin_car_search():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
 
+    q = request.args.get("q", "").strip()
+    results = search_show_cars_admin(int(show["id"]), q)
+
+    return render_template(
+        "admin_car_search.html",
+        show=show,
+        q=q,
+        results=results,
+    )
+    
+@app.get("/admin/command-center")
+@require_admin
+def admin_command_center():
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+
+    q = request.args.get("q", "").strip()
+    search_results = search_show_cars_admin(int(show["id"]), q) if q else []
+    cars = list_show_cars_public(int(show["id"]))
+
+    registered_paid = [c for c in cars if (c["registration_payment_status"] or "") == "paid"]
+    placeholders = [c for c in cars if int(c["is_placeholder"] or 0) == 1]
+    checked_in = [c for c in cars if c["checked_in_at"]]
+
+    return render_template(
+        "admin_command_center.html",
+        show=show,
+        q=q,
+        search_results=search_results,
+        cars=cars,
+        registered_paid=registered_paid,
+        placeholders=placeholders,
+        checked_in=checked_in,
+    )
+    
 @app.post("/admin/login")
 @rate_limit("admin_login", 10, 900)
 def admin_login():

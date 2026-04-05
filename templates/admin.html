@@ -33,12 +33,14 @@
         {% endif %}
       </div>
       <div class="flex flex-wrap gap-2">
-        <a class="btn btn-primary" href="{{ url_for('admin_shows') }}">Manage Shows</a>
-        <a class="btn btn-outline" href="{{ url_for('sponsorship.admin_sponsors') }}">Sponsors</a>
-        <form method="POST" action="{{ url_for('admin_logout') }}">
-          <button class="btn btn-outline">Logout</button>
-        </form>
-      </div>
+      <a class="btn btn-primary" href="{{ url_for('admin_command_center') }}">Command Center</a>
+      <a class="btn btn-outline" href="{{ url_for('admin_car_search') }}">Search Cars / Owners</a>
+      <a class="btn btn-outline" href="{{ url_for('admin_shows') }}">Manage Shows</a>
+      <a class="btn btn-outline" href="{{ url_for('sponsorship.admin_sponsors') }}">Sponsors</a>
+    <form method="POST" action="{{ url_for('admin_logout') }}">
+    <button class="btn btn-outline">Logout</button>
+  </form>
+</div>
     </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -141,13 +143,15 @@
 
       <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div class="text-xs font-semibold text-slate-500">SHORTCUTS</div>
-        <div class="mt-4 grid gap-3">
-          <a class="btn btn-outline" href="{{ url_for('admin_leads') }}">Lead Dashboard</a>
-          <a class="btn btn-outline" href="{{ url_for('admin_placeholders') }}">Placeholder Cars</a>
-          <a class="btn btn-outline" href="{{ url_for('sponsorship.admin_sponsors') }}">Sponsors</a>
-          <a class="btn btn-outline" href="{{ url_for('admin_waivers') }}">Waiver Templates</a>
-          <a class="btn btn-outline" href="{{ url_for('admin_connect_charity_stripe') }}">Connect Charity Stripe</a>
-        </div>
+       <div class="mt-4 grid gap-3">
+  <a class="btn btn-primary" href="{{ url_for('admin_command_center') }}">Open Command Center</a>
+  <a class="btn btn-outline" href="{{ url_for('admin_car_search') }}">Search Cars / Owners</a>
+  <a class="btn btn-outline" href="{{ url_for('admin_leads') }}">Lead Dashboard</a>
+  <a class="btn btn-outline" href="{{ url_for('admin_placeholders') }}">Placeholder Cars</a>
+  <a class="btn btn-outline" href="{{ url_for('sponsorship.admin_sponsors') }}">Sponsors</a>
+  <a class="btn btn-outline" href="{{ url_for('admin_waivers') }}">Waiver Templates</a>
+  <a class="btn btn-outline" href="{{ url_for('admin_connect_charity_stripe') }}">Connect Charity Stripe</a>
+</div>
       </div>
     </div>
   {% endif %}
