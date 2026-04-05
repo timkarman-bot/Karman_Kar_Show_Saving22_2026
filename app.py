@@ -952,6 +952,14 @@ def show_page(slug: str):
         not_found=False,
     )
 
+@app.get("/register")
+def register_page():
+    show = _show_with_rendered_waiver(get_active_show())
+    if not show:
+        return "No active show configured.", 500
+    if not prereg_allowed(show):
+        return render_template("registration_closed.html", show=show), 403
+    return render_template("register.html", show=show)
 
 @app.post("/register")
 @rate_limit("register", 20, 300)
