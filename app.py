@@ -330,7 +330,7 @@ def _connected_account_id(show) -> Optional[str]:
     status = (show["charity_connect_status"] or "").strip() if "charity_connect_status" in show.keys() else ""
     return acct if acct and status == "connected" else None
 
-
+##
 def _require_connected_account(show) -> str:
     acct = _connected_account_id(show)
     if not acct:
@@ -563,7 +563,7 @@ def _save_waiver_capture_html(
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Waiver Capture - Car #{car_number}</title>
+<title>Waiver Capture - Car {car_number}</title>
 <style>
 body {{ font-family: Arial, Helvetica, sans-serif; line-height: 1.45; margin: 40px; color: #111827; }}
 h1, h2 {{ margin-bottom: 8px; }}
@@ -953,18 +953,6 @@ def show_page(slug: str):
     )
 
 
-@app.get("/register")
-def register_page():
-    show = _show_with_rendered_waiver(get_active_show())
-    if not show:
-        return "No active show configured.", 500
-    if not prereg_allowed(show):
-        return render_template("registration_closed.html", show=show), 403
-    if not show_has_capacity(int(show["id"])):
-        return render_template("registration_closed.html", show=show, error="This show is full."), 403
-    return render_template("register.html", show=show)
-
-
 @app.post("/register")
 @rate_limit("register", 20, 300)
 def register_submit():
@@ -1085,10 +1073,6 @@ def register_submit():
         )
         return render_template("register_success.html", show=show, car=car)
 
-    acct = _connected_account_id(show)
-    if not acct:
-        return render_template("register.html", show=show, error="This show does not have a charity payment account connected yet. Please contact the organizer.")
-
     _require_platform_stripe()
     success_url = _abs_url(url_for("registration_success", show_slug=show["slug"], intent_token=intent_token)) + "?session_id={CHECKOUT_SESSION_ID}"
     cancel_url = _abs_url(url_for("register_page"))
@@ -1112,7 +1096,6 @@ def register_submit():
             "registration_intent_id": str(registration_intent_id),
             "intent_token": intent_token,
         },
-        stripe_account=acct,
     )
     attach_stripe_session_to_registration_intent(registration_intent_id, session_obj.id, stripe_payment_intent_id="")
     return render_template(
@@ -1122,7 +1105,6 @@ def register_submit():
         car_number=car_number,
         checkout_url=session_obj.url,
     )
-
 
 @app.get("/register-success/<show_slug>/<intent_token>")
 def registration_success(show_slug: str, intent_token: str):
@@ -1142,13 +1124,9 @@ def registration_success(show_slug: str, intent_token: str):
     if not session_id:
         return render_template("payment_not_complete.html")
 
-    acct = _connected_account_id(show)
-    if not acct:
-        return render_template("payment_not_complete.html")
-
     _require_platform_stripe()
     try:
-        sess = stripe.checkout.Session.retrieve(session_id, stripe_account=acct)
+        sess = stripe.checkout.Session.retrieve(session_id)
     except Exception:
         return render_template("payment_not_complete.html")
 
@@ -1159,17 +1137,48 @@ def registration_success(show_slug: str, intent_token: str):
     car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
     return render_template("register_success.html", show=show, car=car)
 
-
-@app.get("/claim/<show_slug>/<car_token>")
-def placeholder_claim_page(show_slug: str, car_token: str):
-    show = _show_with_rendered_waiver(get_show_by_slug(show_slug))
+@app.get("/claim-success/<show_slug>/<intent_token>")
+def placeholder_claim_success(show_slug: str, intent_token: str):
+    show = get_show_by_slug(show_slug)
     if not show:
         return "Show not found.", 404
-    car = get_show_car_private_by_token(int(show["id"]), car_token)
-    if not car:
-        return "Car not found.", 404
-    return render_template("placeholder_claim.html", show=show, car=car)
 
+    ri = get_registration_intent_by_token(intent_token)
+    if not ri or int(ri["show_id"]) != int(show["id"]):
+        return "Registration not found.", 404
+
+    session_id = request.args.get("session_id", "").strip()
+    if ri["finalized_show_car_id"]:
+        conn = _conn_direct()
+        try:
+            sc = conn.execute("SELECT * FROM show_cars WHERE id = ? LIMIT 1", (int(ri["finalized_show_car_id"]),)).fetchone()
+        finally:
+            conn.close()
+        if not sc:
+            return render_template("payment_not_complete.html")
+        car = get_show_car_public_by_token(int(show["id"]), sc["car_token"])
+        return render_template("placeholder_claim_success.html", show=show, car=car)
+
+    if not session_id:
+        return render_template("payment_not_complete.html")
+
+    _require_platform_stripe()
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id)
+    except Exception:
+        return render_template("payment_not_complete.html")
+
+    if sess.payment_status != "paid":
+        return render_template("payment_not_complete.html")
+
+    md = sess.metadata or {}
+    show_car_id = int(md.get("show_car_id", "0") or "0")
+    if not show_car_id:
+        return render_template("payment_not_complete.html")
+
+    result = _finalize_placeholder_claim_paid(stripe_session_id=sess.id, show_car_id=show_car_id)
+    car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
+    return render_template("placeholder_claim_success.html", show=show, car=car)
 
 @app.post("/claim/<show_slug>/<car_token>")
 @rate_limit("claim", 20, 300)
@@ -1317,10 +1326,6 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
         final_car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
         return render_template("placeholder_claim_success.html", show=show, car=final_car)
 
-    acct = _connected_account_id(show)
-    if not acct:
-        return render_template("placeholder_claim.html", show=show, car=car, error="This show does not have a charity payment account connected yet. Please contact the organizer.")
-
     _require_platform_stripe()
     success_url = _abs_url(url_for("placeholder_claim_success", show_slug=show["slug"], intent_token=intent_token)) + "?session_id={CHECKOUT_SESSION_ID}"
     cancel_url = _abs_url(url_for("placeholder_claim_page", show_slug=show["slug"], car_token=car_token))
@@ -1345,7 +1350,6 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
             "intent_token": intent_token,
             "show_car_id": str(car["id"]),
         },
-        stripe_account=acct,
     )
     attach_stripe_session_to_registration_intent(registration_intent_id, session_obj.id, stripe_payment_intent_id="")
     return render_template(
@@ -1355,54 +1359,6 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
         car_number=car_number,
         checkout_url=session_obj.url,
     )
-
-
-@app.get("/claim-success/<show_slug>/<intent_token>")
-def placeholder_claim_success(show_slug: str, intent_token: str):
-    show = get_show_by_slug(show_slug)
-    if not show:
-        return "Show not found.", 404
-
-    ri = get_registration_intent_by_token(intent_token)
-    if not ri or int(ri["show_id"]) != int(show["id"]):
-        return "Registration not found.", 404
-
-    session_id = request.args.get("session_id", "").strip()
-    if ri["finalized_show_car_id"]:
-        conn = _conn_direct()
-        try:
-            sc = conn.execute("SELECT * FROM show_cars WHERE id = ? LIMIT 1", (int(ri["finalized_show_car_id"]),)).fetchone()
-        finally:
-            conn.close()
-        if not sc:
-            return render_template("payment_not_complete.html")
-        car = get_show_car_public_by_token(int(show["id"]), sc["car_token"])
-        return render_template("placeholder_claim_success.html", show=show, car=car)
-
-    if not session_id:
-        return render_template("payment_not_complete.html")
-
-    acct = _connected_account_id(show)
-    if not acct:
-        return render_template("payment_not_complete.html")
-
-    _require_platform_stripe()
-    try:
-        sess = stripe.checkout.Session.retrieve(session_id, stripe_account=acct)
-    except Exception:
-        return render_template("payment_not_complete.html")
-
-    if sess.payment_status != "paid":
-        return render_template("payment_not_complete.html")
-
-    md = sess.metadata or {}
-    show_car_id = int(md.get("show_car_id", "0") or "0")
-    if not show_car_id:
-        return render_template("payment_not_complete.html")
-
-    result = _finalize_placeholder_claim_paid(stripe_session_id=sess.id, show_car_id=show_car_id)
-    car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
-    return render_template("placeholder_claim_success.html", show=show, car=car)
 
 
 @app.get("/r/<show_slug>/<car_token>")
@@ -1579,10 +1535,6 @@ def create_attendee_fee_checkout():
         create_donation_row(int(show["id"]), attendee_id, 0, "skipped")
         return jsonify({"ok": True, "skipped": True, "redirect_url": url_for("attendee_done", show_slug=show_slug)})
 
-    acct = _connected_account_id(show)
-    if not acct:
-        return jsonify({"ok": False, "error": "The charity payment account is not connected for this show."}), 400
-
     _require_platform_stripe()
     fee_row_id = create_donation_row(int(show["id"]), attendee_id, fixed_fee_cents, "pending")
     success_url = _abs_url(url_for("attendee_fee_success", show_slug=show_slug)) + "?session_id={CHECKOUT_SESSION_ID}"
@@ -1606,12 +1558,10 @@ def create_attendee_fee_checkout():
             "show_slug": show_slug,
             "donation_id": str(fee_row_id),
         },
-        stripe_account=acct,
     )
     attach_stripe_session_to_donation(fee_row_id, session_obj.id, stripe_payment_intent_id="")
     return jsonify({"ok": True, "checkout_url": session_obj.url})
-
-
+    
 @app.get("/attend/<show_slug>/fee-success")
 @app.get("/donation-success")
 def attendee_fee_success(show_slug: Optional[str] = None):
@@ -1625,13 +1575,9 @@ def attendee_fee_success(show_slug: Optional[str] = None):
     if not show:
         return "Show not found.", 404
 
-    acct = _connected_account_id(show)
-    if not acct:
-        return render_template("payment_not_complete.html")
-
     _require_platform_stripe()
     try:
-        sess = stripe.checkout.Session.retrieve(session_id, stripe_account=acct)
+        sess = stripe.checkout.Session.retrieve(session_id)
     except Exception:
         return render_template("payment_not_complete.html")
 
@@ -1640,7 +1586,6 @@ def attendee_fee_success(show_slug: Optional[str] = None):
 
     mark_donation_paid(sess.id)
     return redirect(url_for("attendee_done", show_slug=show["slug"]))
-
 
 @app.get("/attend/<show_slug>/done")
 def attendee_done(show_slug: str):
@@ -1766,7 +1711,7 @@ def create_checkout_session():
             "category": CATEGORY_SLUGS[category_slug],
             "vote_qty": str(vote_qty),
         },
-        stripe_account=acct,
+#        stripe_account=acct,
     )
 
     attach_stripe_session_to_vote_intent(vote_intent_id, session_obj.id, stripe_payment_intent_id="")
@@ -1864,14 +1809,10 @@ def sponsorship_public_submit():
         status="open" if payment_method_choice != "invoice" else "invoice_requested",
         notes=request.form.get("notes", "").strip(),
     )
-
+#######
     if payment_method_choice == "card":
-        acct = _connected_account_id(show)
-        if not acct:
-            flash("This show does not have a charity payment account connected yet.", "error")
-            return redirect(url_for("sponsorship.public_sponsorship_page", show_slug=show_slug))
-
         _require_platform_stripe()
+
         success_url = _abs_url(url_for("sponsorship_checkout_success", sale_id=sale_id)) + "?session_id={CHECKOUT_SESSION_ID}"
         cancel_url = _abs_url(url_for("sponsorship.public_sponsorship_page", show_slug=show_slug))
 
@@ -1882,7 +1823,9 @@ def sponsorship_public_submit():
                 "price_data": {
                     "currency": "usd",
                     "unit_amount": int(catalog["price_cents"] or 0),
-                    "product_data": {"name": f"Sponsorship – {catalog['package_name']} ({show['title']})"},
+                    "product_data": {
+                        "name": f"Sponsorship – {catalog['package_name']} ({show['title']})"
+                    },
                 },
                 "quantity": 1,
             }],
@@ -1896,7 +1839,6 @@ def sponsorship_public_submit():
                 "sale_id": str(sale_id),
                 "catalog_id": str(catalog_id),
             },
-            stripe_account=acct,
         )
 
         save_sponsorship_sale(
@@ -1924,9 +1866,8 @@ def sponsorship_public_submit():
             stripe_checkout_session_id=session_obj.id,
             notes=request.form.get("notes", "").strip(),
         )
-        return redirect(session_obj.url)
 
-    email_subject = f"Sponsorship {payment_method_choice} request – {request.form.get('sponsor_business_name', '').strip()}"
+        return redirect(session_obj.url)    email_subject = f"Sponsorship {payment_method_choice} request – {request.form.get('sponsor_business_name', '').strip()}"
     email_body = (
         f"Show: {show['title']}\n"
         f"Sponsor business: {request.form.get('sponsor_business_name', '').strip()}\n"
@@ -1961,36 +1902,61 @@ def sponsorship_public_submit():
 
 
 @app.get("/sponsorship/checkout-success/<int:sale_id>")
-def sponsorship_checkout_success(sale_id:int):
+def sponsorship_checkout_success(sale_id: int):
     sale = get_sponsorship_sale(sale_id)
-    if not sale: return "Sponsorship sale not found.", 404
-    show = get_active_show()
-    if not show: return "Show not found.", 404
-    session_id = request.args.get("session_id","").strip()
-    if not session_id: return render_template("payment_not_complete.html")
-    acct = _connected_account_id(show)
-    if not acct: return render_template("payment_not_complete.html")
+    if not sale:
+        return "Sponsorship sale not found.", 404
+
+    session_id = request.args.get("session_id", "").strip()
+    if not session_id:
+        return render_template("payment_not_complete.html")
+
     _require_platform_stripe()
-    try: sess = stripe.checkout.Session.retrieve(session_id, stripe_account=acct)
-    except Exception: return render_template("payment_not_complete.html")
-    if sess.payment_status != "paid": return render_template("payment_not_complete.html")
+    try:
+        sess = stripe.checkout.Session.retrieve(session_id)
+    except Exception:
+        return render_template("payment_not_complete.html")
+
+    if sess.payment_status != "paid":
+        return render_template("payment_not_complete.html")
+
+    show_slug = ""
+    try:
+        show_slug = (sess.metadata or {}).get("show_slug", "").strip()
+    except Exception:
+        show_slug = ""
+    show = get_show_by_slug(show_slug) if show_slug else get_active_show()
+    if not show:
+        return render_template("payment_not_complete.html")
+
     receipt_url = ""
     try:
         if getattr(sess, "payment_intent", None):
-            pi = stripe.PaymentIntent.retrieve(sess.payment_intent, stripe_account=acct)
+            pi = stripe.PaymentIntent.retrieve(sess.payment_intent)
             if getattr(pi, "latest_charge", None):
-                ch = stripe.Charge.retrieve(pi.latest_charge, stripe_account=acct)
+                ch = stripe.Charge.retrieve(pi.latest_charge)
                 receipt_url = getattr(ch, "receipt_url", "") or ""
     except Exception:
         receipt_url = ""
+
     mark_sponsorship_sale_paid_by_checkout_session(sess.id, receipt_url=receipt_url)
     sale = get_sponsorship_sale_by_checkout_session(sess.id) or sale
     sponsor_name = (sale.get("sponsor_business_name") or "").strip()
     if sponsor_name:
-        sponsor_id = upsert_sponsor(name=sponsor_name, logo_path=(sale.get("logo_path") or "").strip(), website_url=(sale.get("website_url") or "").strip())
-        attach_sponsor_to_show(int(show["id"]), sponsor_id, placement=(sale.get("placement") or "standard").strip(), sort_order=100)
-    return render_template("vote_success.html", show=show)
+        sponsor_id = upsert_sponsor(
+            name=sponsor_name,
+            logo_path=(sale.get("logo_path") or "").strip(),
+            website_url=(sale.get("website_url") or "").strip(),
+        )
+        attach_sponsor_to_show(
+            int(show["id"]),
+            sponsor_id,
+            placement=(sale.get("placement") or "standard").strip(),
+            sort_order=100,
+        )
 
+    flash("Payment received. Stripe will send your receipt automatically.", "ok")
+    return redirect(url_for("sponsorship.public_sponsorship_page", show_slug=show["slug"]))
 
 @app.get("/admin")
 def admin_page():
