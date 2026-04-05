@@ -1308,6 +1308,117 @@ def get_show_car_by_number(show_id: int, car_number: int) -> Optional[sqlite3.Ro
     conn.close()
     return row
 
+def get_next_available_car_number(show_id: int) -> int:
+    conn = _conn()
+    rows = conn.execute(
+        """
+        SELECT car_number
+        FROM show_cars
+        WHERE show_id = ?
+        ORDER BY car_number ASC
+        """,
+        (show_id,),
+    ).fetchall()
+    conn.close()
+
+    used = {int(r["car_number"]) for r in rows}
+    n = 1
+    while n in used:
+        n += 1
+    return n
+
+
+def search_show_cars_admin(show_id: int, query: str) -> List[sqlite3.Row]:
+    q = (query or "").strip()
+    conn = _conn()
+
+    base_select = """
+        SELECT
+            sc.id,
+            sc.show_id,
+            sc.person_id,
+            sc.car_number,
+            sc.car_token,
+            sc.year,
+            sc.make,
+            sc.model,
+            sc.registration_payment_status,
+            sc.registration_amount_cents,
+            sc.registration_session_id,
+            sc.waiver_received,
+            sc.waiver_received_at,
+            sc.waiver_received_by,
+            sc.waiver_signed_name,
+            sc.waiver_signed_at,
+            sc.is_placeholder,
+            sc.registration_state,
+            sc.checked_in_at,
+            p.name AS owner_name,
+            p.phone AS owner_phone,
+            p.email AS owner_email,
+            p.opt_in_future,
+            p.sponsor_opt_in
+        FROM show_cars sc
+        JOIN people p ON p.id = sc.person_id
+    """
+
+    if not q:
+        rows = conn.execute(
+            base_select + """
+            WHERE sc.show_id = ?
+            ORDER BY sc.car_number ASC
+            LIMIT 250
+            """,
+            (show_id,),
+        ).fetchall()
+        conn.close()
+        return rows
+
+    like_q = f"%{q}%"
+    number = None
+    try:
+        number = int(q)
+    except Exception:
+        number = None
+
+    if number is not None:
+        rows = conn.execute(
+            base_select + """
+            WHERE sc.show_id = ?
+              AND (
+                    sc.car_number = ?
+                 OR p.name LIKE ?
+                 OR p.phone LIKE ?
+                 OR p.email LIKE ?
+                 OR sc.year LIKE ?
+                 OR sc.make LIKE ?
+                 OR sc.model LIKE ?
+              )
+            ORDER BY sc.car_number ASC
+            LIMIT 250
+            """,
+            (show_id, number, like_q, like_q, like_q, like_q, like_q, like_q),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            base_select + """
+            WHERE sc.show_id = ?
+              AND (
+                    p.name LIKE ?
+                 OR p.phone LIKE ?
+                 OR p.email LIKE ?
+                 OR sc.year LIKE ?
+                 OR sc.make LIKE ?
+                 OR sc.model LIKE ?
+              )
+            ORDER BY sc.car_number ASC
+            LIMIT 250
+            """,
+            (show_id, like_q, like_q, like_q, like_q, like_q, like_q),
+        ).fetchall()
+
+    conn.close()
+    return rows
 
 def list_show_cars_public(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
@@ -1351,7 +1462,6 @@ def create_registration_intent(
     email: str,
     opt_in_future: bool,
     sponsor_opt_in: bool,
-    car_number: int,
     year: str,
     make: str,
     model: str,
@@ -1361,56 +1471,90 @@ def create_registration_intent(
     waiver_version: str,
     amount_cents: int,
     waiver_template_id: Optional[int] = None,
-) -> Tuple[int, str]:
+    reserved_car_number: Optional[int] = None,
+) -> Tuple[int, str, int]:
     conn = _conn()
     cur = conn.cursor()
 
-    if not show_has_capacity(show_id):
-        conn.close()
-        raise ValueError("This show has reached its maximum number of cars.")
+    try:
+        cur.execute("BEGIN IMMEDIATE")
 
-    existing = cur.execute("SELECT id FROM show_cars WHERE show_id = ? AND car_number = ? LIMIT 1", (show_id, car_number)).fetchone()
-    if existing:
-        conn.close()
-        raise ValueError("That car number is already registered for this show.")
+        if not show_has_capacity(show_id):
+            raise ValueError("This show has reached its maximum number of cars.")
 
-    token = _new_token()
-    cur.execute(
-        """
-        INSERT INTO registration_intents (
-            show_id, intent_token, owner_name, phone, email, opt_in_future, sponsor_opt_in,
-            car_number, year, make, model,
-            waiver_accepted, waiver_signed_name, waiver_text, waiver_version, waiver_text_sha256,
-            waiver_template_id, amount_cents, payment_status
+        if reserved_car_number is not None:
+            car_number = int(reserved_car_number)
+
+            existing_paid = cur.execute(
+                """
+                SELECT id
+                FROM show_cars
+                WHERE show_id = ?
+                  AND car_number = ?
+                  AND COALESCE(is_placeholder, 0) = 0
+                LIMIT 1
+                """,
+                (show_id, car_number),
+            ).fetchone()
+            if existing_paid:
+                raise ValueError("That car number is already registered for this show.")
+
+            existing_placeholder = cur.execute(
+                """
+                SELECT id
+                FROM show_cars
+                WHERE show_id = ?
+                  AND car_number = ?
+                  AND COALESCE(is_placeholder, 0) = 1
+                LIMIT 1
+                """,
+                (show_id, car_number),
+            ).fetchone()
+            if not existing_placeholder:
+                raise ValueError("That placeholder car number is no longer available.")
+        else:
+            car_number = get_next_available_car_number(show_id)
+
+        token = _new_token()
+        cur.execute(
+            """
+            INSERT INTO registration_intents (
+                show_id, intent_token, owner_name, phone, email, opt_in_future, sponsor_opt_in,
+                car_number, year, make, model,
+                waiver_accepted, waiver_signed_name, waiver_text, waiver_version, waiver_text_sha256,
+                waiver_template_id, amount_cents, payment_status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            """,
+            (
+                show_id,
+                token,
+                owner_name,
+                phone,
+                email,
+                _b(opt_in_future),
+                _b(sponsor_opt_in),
+                car_number,
+                year,
+                make,
+                model,
+                _b(waiver_accepted),
+                waiver_signed_name,
+                waiver_text,
+                waiver_version,
+                _sha256_text(waiver_text),
+                waiver_template_id,
+                int(amount_cents),
+            ),
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-        """,
-        (
-            show_id,
-            token,
-            owner_name,
-            phone,
-            email,
-            _b(opt_in_future),
-            _b(sponsor_opt_in),
-            car_number,
-            year,
-            make,
-            model,
-            _b(waiver_accepted),
-            waiver_signed_name,
-            waiver_text,
-            waiver_version,
-            _sha256_text(waiver_text),
-            waiver_template_id,
-            int(amount_cents),
-        ),
-    )
-    conn.commit()
-    rid = int(cur.lastrowid)
-    conn.close()
-    return rid, token
-
+        conn.commit()
+        rid = int(cur.lastrowid)
+        return rid, token, car_number
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def get_registration_intent_by_token(intent_token: str) -> Optional[sqlite3.Row]:
     conn = _conn()
@@ -1445,14 +1589,25 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
     cur = conn.cursor()
     try:
         cur.execute("BEGIN IMMEDIATE")
-        ri = cur.execute("SELECT * FROM registration_intents WHERE stripe_session_id = ? LIMIT 1", (stripe_session_id,)).fetchone()
+        ri = cur.execute(
+            "SELECT * FROM registration_intents WHERE stripe_session_id = ? LIMIT 1",
+            (stripe_session_id,),
+        ).fetchone()
         if not ri:
             raise ValueError("Registration intent not found.")
 
         if ri["finalized_show_car_id"]:
-            sc = cur.execute("SELECT * FROM show_cars WHERE id = ? LIMIT 1", (int(ri["finalized_show_car_id"]),)).fetchone()
+            sc = cur.execute(
+                "SELECT * FROM show_cars WHERE id = ? LIMIT 1",
+                (int(ri["finalized_show_car_id"]),),
+            ).fetchone()
             cur.execute(
-                "UPDATE registration_intents SET payment_status = 'paid', paid_at = COALESCE(paid_at, datetime('now')) WHERE id = ?",
+                """
+                UPDATE registration_intents
+                SET payment_status = 'paid',
+                    paid_at = COALESCE(paid_at, datetime('now'))
+                WHERE id = ?
+                """,
                 (int(ri["id"]),),
             )
             conn.commit()
@@ -1468,7 +1623,12 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
             raise ValueError("This show has reached its maximum number of cars.")
 
         existing_final = cur.execute(
-            "SELECT id FROM show_cars WHERE show_id = ? AND car_number = ? LIMIT 1",
+            """
+            SELECT id
+            FROM show_cars
+            WHERE show_id = ? AND car_number = ?
+            LIMIT 1
+            """,
             (show_id, int(ri["car_number"])),
         ).fetchone()
         if existing_final:
@@ -1530,7 +1690,13 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
         show_car_id = int(cur.lastrowid)
 
         cur.execute(
-            "UPDATE registration_intents SET payment_status = 'paid', paid_at = datetime('now'), finalized_show_car_id = ? WHERE id = ?",
+            """
+            UPDATE registration_intents
+            SET payment_status = 'paid',
+                paid_at = datetime('now'),
+                finalized_show_car_id = ?
+            WHERE id = ?
+            """,
             (show_car_id, int(ri["id"])),
         )
 
@@ -1547,13 +1713,17 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
     finally:
         conn.close()
 
-
 # PLACEHOLDER CARS
 
 def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
     conn = _conn()
     cur = conn.cursor()
-    show = cur.execute("SELECT max_cars FROM shows WHERE id = ? LIMIT 1", (show_id,)).fetchone()
+
+    show = cur.execute(
+        "SELECT max_cars FROM shows WHERE id = ? LIMIT 1",
+        (show_id,),
+    ).fetchone()
+
     max_cars = None
     if show and show["max_cars"] is not None:
         try:
@@ -1561,27 +1731,44 @@ def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
         except Exception:
             max_cars = None
 
-    current_count = int(cur.execute("SELECT COUNT(*) AS cnt FROM show_cars WHERE show_id = ?", (show_id,)).fetchone()["cnt"] or 0)
+    current_count = int(
+        cur.execute(
+            "SELECT COUNT(*) AS cnt FROM show_cars WHERE show_id = ?",
+            (show_id,),
+        ).fetchone()["cnt"] or 0
+    )
+
     created = 0
     for n in range(start_number, start_number + count):
         if max_cars and max_cars > 0 and (current_count + created) >= max_cars:
             break
-        exists = cur.execute("SELECT 1 FROM show_cars WHERE show_id = ? AND car_number = ? LIMIT 1", (show_id, n)).fetchone()
+
+        exists = cur.execute(
+            "SELECT 1 FROM show_cars WHERE show_id = ? AND car_number = ? LIMIT 1",
+            (show_id, n),
+        ).fetchone()
         if exists:
             continue
+
         cur.execute(
-            "INSERT INTO people (name, phone, email, opt_in_future, sponsor_opt_in, consent_text, consent_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO people (
+                name, phone, email, opt_in_future, sponsor_opt_in, consent_text, consent_version
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
             ("", "", "", 0, 0, None, None),
         )
         person_id = int(cur.lastrowid)
+
         token = _new_car_token()
         cur.execute(
             """
             INSERT INTO show_cars (
                 show_id, person_id, car_number, car_token, year, make, model,
-                is_placeholder, registration_state
+                is_placeholder, registration_state, registration_payment_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'placeholder')
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'placeholder', 'pending')
             """,
             (show_id, person_id, n, token, "TBD", "TBD", "TBD"),
         )
@@ -1590,7 +1777,6 @@ def create_placeholder_cars(show_id: int, start_number: int, count: int) -> int:
     conn.commit()
     conn.close()
     return created
-
 
 # VOTING
 

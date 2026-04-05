@@ -104,6 +104,8 @@ from database import (
     create_waiver_template,
     update_waiver_template,
     get_effective_waiver_template_for_show,
+    get_next_available_car_number,
+    search_show_cars_admin,
 )
 
 
@@ -952,15 +954,6 @@ def show_page(slug: str):
         not_found=False,
     )
 
-@app.get("/register")
-def register_page():
-    show = _show_with_rendered_waiver(get_active_show())
-    if not show:
-        return "No active show configured.", 500
-    if not prereg_allowed(show):
-        return render_template("registration_closed.html", show=show), 403
-    return render_template("register.html", show=show)
-
 @app.post("/register")
 @rate_limit("register", 20, 300)
 def register_submit():
@@ -977,26 +970,18 @@ def register_submit():
     email = request.form.get("email", "").strip().lower()
     opt_in_future = request.form.get("opt_in_future", "") == "on"
     sponsor_opt_in = request.form.get("sponsor_opt_in", "") == "on"
-    car_number_raw = request.form.get("car_number", "").strip()
     year = request.form.get("year", "").strip()
     make = request.form.get("make", "").strip()
     model = request.form.get("model", "").strip()
     waiver_accepted = request.form.get("waiver_accepted", "") == "on"
     waiver_signed_name = request.form.get("waiver_signed_name", "").strip()
 
-    if not (name and car_number_raw and year and make and model and waiver_signed_name):
+    if not (name and year and make and model and waiver_signed_name):
         return render_template("register.html", show=show, error="Please fill out all required fields.")
     if (opt_in_future or sponsor_opt_in) and not phone:
         return render_template("register.html", show=show, error="Phone number is required if you opt in to updates or sponsor information.")
     if not waiver_accepted:
         return render_template("register.html", show=show, error="You must accept the waiver to continue.")
-
-    try:
-        car_number = int(car_number_raw)
-        if car_number <= 0:
-            raise ValueError()
-    except ValueError:
-        return render_template("register.html", show=show, error="Car number must be a positive number.")
 
     registration_fee_cents = int(show["registration_fee_cents"] or 0)
     waiver_text = (show.get("waiver_text") or "").strip()
@@ -1004,14 +989,13 @@ def register_submit():
     waiver_template_id = int(show["waiver_template_id"]) if show.get("waiver_template_id") else None
 
     try:
-        registration_intent_id, intent_token = create_registration_intent(
+        registration_intent_id, intent_token, assigned_car_number = create_registration_intent(
             show_id=int(show["id"]),
             owner_name=name,
             phone=phone,
             email=email,
             opt_in_future=opt_in_future,
             sponsor_opt_in=sponsor_opt_in,
-            car_number=car_number,
             year=year,
             make=make,
             model=model,
@@ -1027,7 +1011,7 @@ def register_submit():
 
     html_path = _save_waiver_capture_html(
         show=show,
-        car_number=car_number,
+        car_number=assigned_car_number,
         owner_name=name,
         phone=phone,
         email=email,
@@ -1048,7 +1032,7 @@ def register_submit():
         show=show,
         registration_intent_id=registration_intent_id,
         show_car_id=None,
-        car_number=car_number,
+        car_number=assigned_car_number,
         owner_name=name,
         phone=phone,
         email=email,
@@ -1076,7 +1060,7 @@ def register_submit():
         _log_event(
             "registration.free_finalized",
             int(show["id"]),
-            {"car_number": car_number, "registration_intent_id": registration_intent_id},
+            {"car_number": assigned_car_number, "registration_intent_id": registration_intent_id},
             actor_type="public",
         )
         return render_template("register_success.html", show=show, car=car)
@@ -1084,6 +1068,7 @@ def register_submit():
     _require_platform_stripe()
     success_url = _abs_url(url_for("registration_success", show_slug=show["slug"], intent_token=intent_token)) + "?session_id={CHECKOUT_SESSION_ID}"
     cancel_url = _abs_url(url_for("register_page"))
+
     session_obj = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],
@@ -1091,7 +1076,7 @@ def register_submit():
             "price_data": {
                 "currency": "usd",
                 "unit_amount": registration_fee_cents,
-                "product_data": {"name": f"Registration – {show['title']}"},
+                "product_data": {"name": f"Registration – {show['title']} – Car #{assigned_car_number}"},
             },
             "quantity": 1,
         }],
@@ -1105,15 +1090,19 @@ def register_submit():
             "intent_token": intent_token,
         },
     )
-    attach_stripe_session_to_registration_intent(registration_intent_id, session_obj.id, stripe_payment_intent_id="")
+    attach_stripe_session_to_registration_intent(
+        registration_intent_id,
+        session_obj.id,
+        stripe_payment_intent_id="",
+    )
     return render_template(
         "register_checkout.html",
         show=show,
         car={"year": year, "make": make, "model": model},
-        car_number=car_number,
+        car_number=assigned_car_number,
         checkout_url=session_obj.url,
     )
-
+        
 @app.get("/register-success/<show_slug>/<intent_token>")
 def registration_success(show_slug: str, intent_token: str):
     show = get_show_by_slug(show_slug)
@@ -1223,14 +1212,13 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
     waiver_template_id = int(show["waiver_template_id"]) if show.get("waiver_template_id") else None
 
     try:
-        registration_intent_id, intent_token = create_registration_intent(
+        registration_intent_id, intent_token, assigned_car_number = create_registration_intent(
             show_id=int(show["id"]),
             owner_name=owner_name,
             phone=phone,
             email=email,
             opt_in_future=opt_in_future,
             sponsor_opt_in=sponsor_opt_in,
-            car_number=car_number,
             year=year,
             make=make,
             model=model,
@@ -1240,12 +1228,14 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
             waiver_version=waiver_version,
             amount_cents=registration_fee_cents,
             waiver_template_id=waiver_template_id,
+            reserved_car_number=car_number,
         )
     except ValueError:
         conn = _conn_direct()
         cur = conn.cursor()
         try:
             intent_token = secrets.token_urlsafe(18)
+            assigned_car_number = car_number
             cur.execute(
                 """
                 INSERT INTO registration_intents (
@@ -1283,7 +1273,7 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
 
     html_path = _save_waiver_capture_html(
         show=show,
-        car_number=car_number,
+        car_number=assigned_car_number,
         owner_name=owner_name,
         phone=phone,
         email=email,
@@ -1304,7 +1294,7 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
         show=show,
         registration_intent_id=registration_intent_id,
         show_car_id=int(car["id"]),
-        car_number=car_number,
+        car_number=assigned_car_number,
         owner_name=owner_name,
         phone=phone,
         email=email,
@@ -1344,7 +1334,7 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
             "price_data": {
                 "currency": "usd",
                 "unit_amount": registration_fee_cents,
-                "product_data": {"name": f"Registration – {show['title']}"},
+                "product_data": {"name": f"Registration – {show['title']} – Car #{assigned_car_number}"},
             },
             "quantity": 1,
         }],
@@ -1359,15 +1349,18 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
             "show_car_id": str(car["id"]),
         },
     )
-    attach_stripe_session_to_registration_intent(registration_intent_id, session_obj.id, stripe_payment_intent_id="")
+    attach_stripe_session_to_registration_intent(
+        registration_intent_id,
+        session_obj.id,
+        stripe_payment_intent_id="",
+    )
     return render_template(
         "register_checkout.html",
         show=show,
         car={"year": year, "make": make, "model": model},
-        car_number=car_number,
+        car_number=assigned_car_number,
         checkout_url=session_obj.url,
     )
-
 
 @app.get("/r/<show_slug>/<car_token>")
 def registration_complete(show_slug: str, car_token: str):
