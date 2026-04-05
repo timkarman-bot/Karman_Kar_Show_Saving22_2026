@@ -1,4 +1,4 @@
-# Karman Kar Shows & Events — hardened app.py
+# Karman Kar Shows & Events — hardened app.py  04/06/2026
 # 4-space indentation only (no tabs)
 
 from dotenv import load_dotenv
