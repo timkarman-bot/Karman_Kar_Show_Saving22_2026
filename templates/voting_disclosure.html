@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% set title = "Voting Disclosure • Karman Kar Shows & Events, LLC" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-3xl font-semibold mb-6">Voting Disclosure</h1>
+  <p class="mb-4 text-slate-600">Effective Date: {{ current_year or "2026" }}</p>
+
+  <p class="mb-6">
+    This page explains how voting-related payments are handled for Karman Kar Shows &amp; Events, LLC events.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Voting May Involve Payment</h2>
+  <p class="mb-6">
+    Some events allow or require a payment or donation in connection with voting. The applicable amount, options, and event-specific
+    disclosure will appear on the voting page.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">No Guarantee of Result</h2>
+  <p class="mb-6">
+    Payment does not guarantee any result, placement, ranking, or award. Final outcomes depend on event rules, total verified votes,
+    and operational review.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Non-Refundable</h2>
+  <p class="mb-6">
+    Voting-related payments and donations are generally non-refundable unless Karman Kar Shows &amp; Events determines a processing
+    error occurred and chooses to correct it.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Right to Review or Void</h2>
+  <p class="mb-6">
+    Karman Kar Shows &amp; Events reserves the right to review, reject, void, or remove votes affected by fraud, duplicate transactions,
+    chargebacks, abuse, error, or technical issues.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Contact Information</h2>
+  <div class="rounded-2xl border border-slate-200 p-4 bg-white">
+    <div class="font-semibold">Karman Kar Shows &amp; Events, LLC</div>
+    <div>Email: info@karmankarshowsandevents.com</div>
+    <div>Phone: 918-809-2206</div>
+  </div>
+</div>
+{% endblock %}

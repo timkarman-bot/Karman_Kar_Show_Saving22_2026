@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set title = "Sponsor Agreement • Karman Kar Shows & Events, LLC" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-3xl font-semibold mb-6">Sponsor Agreement</h1>
+  <p class="mb-4 text-slate-600">Effective Date: {{ current_year or "2026" }}</p>
+
+  <p class="mb-6">
+    This Sponsor Agreement applies to sponsorship submissions and payments made through Karman Kar Shows &amp; Events, LLC.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Sponsor Commitment</h2>
+  <p class="mb-6">
+    By submitting a sponsorship form or payment, the sponsor confirms that the information provided is accurate and that the person
+    submitting the form is authorized to act on behalf of the sponsoring business or organization.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Payment</h2>
+  <p class="mb-6">
+    Sponsorship payments are non-refundable once confirmed. If invoice or check payment is selected, sponsorship availability is not guaranteed
+    until payment is received or otherwise approved by Karman Kar Shows &amp; Events.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Availability</h2>
+  <p class="mb-6">
+    Sponsorship levels are limited and may become unavailable at any time. If a selected sponsorship is no longer available,
+    Karman Kar Shows &amp; Events may offer an alternative option or other resolution.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Logos and Materials</h2>
+  <p class="mb-6">
+    Sponsors are responsible for providing correct logos, artwork, names, website links, and any other requested materials in a timely manner.
+    Delayed or incomplete sponsor materials may affect placement or promotion.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Public Display</h2>
+  <p class="mb-6">
+    Sponsors understand that business name, logo, website, and sponsor recognition may be displayed publicly on the website,
+    printed materials, signage, social media, and event promotions.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Contact Information</h2>
+  <div class="rounded-2xl border border-slate-200 p-4 bg-white">
+    <div class="font-semibold">Karman Kar Shows &amp; Events, LLC</div>
+    <div>Email: info@karmankarshowsandevents.com</div>
+    <div>Phone: 918-809-2206</div>
+  </div>
+</div>
+{% endblock %}

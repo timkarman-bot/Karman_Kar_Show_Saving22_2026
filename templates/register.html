@@ -122,18 +122,26 @@
           <input required name="waiver_signed_name" placeholder="Type your full name" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
           <label class="mt-3 flex items-start gap-3">
             <input required type="checkbox" name="waiver_accepted" class="mt-1">
-            <span class="text-sm text-slate-700">I agree to the event waiver above and understand this electronic signature is legally binding.</span>
+            <span class="text-sm text-slate-700">
+  I agree to the event waiver above, understand this electronic signature is legally binding,
+  acknowledge all events are rain or shine, and understand registration fees are non-refundable unless otherwise stated.
+</span>
           </label>
         </div>
       </div>
 
       <div class="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        <div class="text-sm text-slate-600">Registration fee</div>
-        <div class="mt-1 text-3xl font-semibold">${{ "%.2f"|format((show["registration_fee_cents"] or 0) / 100) }}</div>
-        <button class="btn btn-primary mt-4" type="submit">
-          {% if show["registration_fee_cents"] > 0 %}Continue to Payment{% else %}Complete Registration{% endif %}
-        </button>
-      </div>
+  <div class="text-sm text-slate-600">Registration fee</div>
+  <div class="mt-1 text-3xl font-semibold">${{ "%.2f"|format((show["registration_fee_cents"] or 0) / 100) }}</div>
+
+  <div class="mt-3 text-xs text-slate-500">
+    <a href="/privacy" class="underline" target="_blank">Privacy Policy</a>
+  </div>
+
+  <button class="btn btn-primary mt-4" type="submit">
+    {% if show["registration_fee_cents"] > 0 %}Continue to Payment{% else %}Complete Registration{% endif %}
+  </button>
+</div>
     </form>
   </section>
 </div>

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% set title = "Refund Policy • Karman Kar Shows & Events, LLC" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-3xl font-semibold mb-6">Refund Policy</h1>
+  <p class="mb-4 text-slate-600">Effective Date: {{ current_year or "2026" }}</p>
+
+  <p class="mb-6">
+    This Refund Policy applies to registrations, sponsorships, voting-related payments, donations, and other purchases made through
+    Karman Kar Shows &amp; Events, LLC.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Event Registrations</h2>
+  <p class="mb-6">
+    Registration fees are generally non-refundable. All events are rain or shine unless changed by Karman Kar Shows &amp; Events for safety
+    or operational reasons. A refund may be issued only if approved in writing by Karman Kar Shows &amp; Events.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Sponsorships</h2>
+  <p class="mb-6">
+    Sponsorship payments are non-refundable once confirmed. If payment is submitted for an unavailable sponsorship in error,
+    Karman Kar Shows &amp; Events may offer reassignment, credit, or refund at its discretion.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Voting / Donation Payments</h2>
+  <p class="mb-6">
+    Voting-related payments and donations are non-refundable. Payment does not guarantee any result, placement, or award.
+    If a duplicate transaction or processing error occurs, Karman Kar Shows &amp; Events may review and correct it.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Chargebacks</h2>
+  <p class="mb-6">
+    If you believe there is a billing issue, contact customer service first. Filing a chargeback without first attempting resolution
+    may delay review and may affect eligibility for future participation.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Contact Information</h2>
+  <div class="rounded-2xl border border-slate-200 p-4 bg-white">
+    <div class="font-semibold">Karman Kar Shows &amp; Events, LLC</div>
+    <div>Email: info@karmankarshowsandevents.com</div>
+    <div>Phone: 918-809-2206</div>
+  </div>
+</div>
+{% endblock %}

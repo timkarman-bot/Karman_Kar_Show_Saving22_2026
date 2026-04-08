@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% set title = "Terms of Service • Karman Kar Shows & Events, LLC" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-3xl font-semibold mb-6">Terms of Service</h1>
+  <p class="mb-4 text-slate-600">Effective Date: {{ current_year or "2026" }}</p>
+
+  <p class="mb-6">
+    These Terms of Service govern use of the Karman Kar Shows &amp; Events, LLC website and related registration,
+    sponsorship, voting, donation, and customer service features. By using this website or submitting any form or payment,
+    you agree to these terms.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Event Participation</h2>
+  <p class="mb-6">
+    Participation in events is voluntary. Attendees, participants, sponsors, and voters are responsible for their own decisions,
+    actions, vehicles, property, and safety. All events are rain or shine unless Karman Kar Shows &amp; Events determines a change
+    is necessary for safety or operational reasons.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Payments</h2>
+  <p class="mb-6">
+    Card payments are processed securely through Stripe or another approved payment provider. By submitting payment, you authorize
+    the stated charge for the selected registration, sponsorship, vote, donation, or other service.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Refunds</h2>
+  <p class="mb-6">
+    Registration fees, sponsorship payments, and voting-related payments are generally non-refundable unless Karman Kar Shows &amp; Events
+    decides otherwise in writing.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Voting and Donations</h2>
+  <p class="mb-6">
+    Voting may be tied to donations or other payments depending on the event structure. Payment does not guarantee any result,
+    placement, or award. Karman Kar Shows &amp; Events reserves the right to reject, void, or review votes in cases of error,
+    fraud, abuse, duplicate transactions, or operational issues.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Sponsorships</h2>
+  <p class="mb-6">
+    Sponsorship availability is limited and may change without notice. Sponsorship payments are non-refundable once confirmed.
+    Sponsors are responsible for providing accurate contact details, logos, and other requested materials.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Website Use</h2>
+  <p class="mb-6">
+    You agree not to misuse the website, interfere with payment processing, submit false information, or attempt to disrupt event,
+    sponsorship, voting, or contact systems.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Changes</h2>
+  <p class="mb-6">
+    Karman Kar Shows &amp; Events may update these terms from time to time by posting revised content on this website.
+  </p>
+
+  <h2 class="text-xl font-semibold mt-8 mb-2">Contact Information</h2>
+  <div class="rounded-2xl border border-slate-200 p-4 bg-white">
+    <div class="font-semibold">Karman Kar Shows &amp; Events, LLC</div>
+    <div>Email: info@karmankarshowsandevents.com</div>
+    <div>Phone: 918-809-2206</div>
+  </div>
+</div>
+{% endblock %}

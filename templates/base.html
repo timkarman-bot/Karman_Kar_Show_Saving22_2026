@@ -61,15 +61,24 @@
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="border-t border-slate-200/70 bg-white/70">
-    <div class="mx-auto max-w-6xl px-4 py-8 text-sm text-slate-600 flex flex-col md:flex-row gap-2 md:items-center md:justify-between">
-      <div>© 2026 Karman Kar Shows & Events, LLC</div>
-      <div class="text-slate-500 flex gap-4 flex-wrap">
-        <span>Customer service: info@karmankarshowsandevents.com</span>
-        <a href="{{ url_for('contact_page') }}" class="underline">Contact</a>
-        <a href="{{ url_for('privacy_policy') }}" class="underline">Privacy Policy</a>
-      </div>
+<footer class="border-t border-slate-200/70 bg-white/70">
+  <div class="mx-auto max-w-6xl px-4 py-8 text-sm text-slate-600 flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
+
+    <div>© 2026 Karman Kar Shows &amp; Events, LLC</div>
+
+    <div class="text-slate-500 flex gap-4 flex-wrap">
+      <span>Customer service: info@karmankarshowsandevents.com</span>
+
+      <a href="{{ url_for('contact_page') }}" class="underline">Contact</a>
+      <a href="{{ url_for('privacy_policy') }}" class="underline">Privacy Policy</a>
+      <a href="{{ url_for('terms_page') }}" class="underline">Terms</a>
+      <a href="{{ url_for('refund_policy_page') }}" class="underline">Refund Policy</a>
+      <a href="{{ url_for('support_page') }}" class="underline">Support</a>
+      <a href="{{ url_for('voting_disclosure_page') }}" class="underline">Voting Disclosure</a>
+      <a href="{{ url_for('sponsor_agreement_page') }}" class="underline">Sponsor Agreement</a>
     </div>
-  </footer>
+
+  </div>
+</footer>
 </body>
 </html>

@@ -892,6 +892,26 @@ def contact_submit():
 def privacy_policy():
     return render_template("privacy.html", current_year=datetime.now().year)
         
+@app.get("/terms")
+def terms_page():
+    return render_template("terms.html", current_year=datetime.now().year)
+
+@app.get("/refund-policy")
+def refund_policy_page():
+    return render_template("refund_policy.html", current_year=datetime.now().year)
+
+@app.get("/support")
+def support_page():
+    return render_template("support.html", current_year=datetime.now().year)
+
+@app.get("/voting-disclosure")
+def voting_disclosure_page():
+    return render_template("voting_disclosure.html", current_year=datetime.now().year)
+
+@app.get("/sponsor-agreement")
+def sponsor_agreement_page():
+    return render_template("sponsor_agreement.html", current_year=datetime.now().year)        
+        
 @app.post("/event-updates-signup")
 @rate_limit("event_updates_signup", 20, 300)
 def event_updates_signup():
@@ -1766,6 +1786,12 @@ def sponsorship_public_submit():
     show = get_show_by_slug(show_slug)
     if not show:
         return "Show not found.", 404
+        
+    agree_sponsor_terms = request.form.get("agree_sponsor_terms", "").strip()
+    if agree_sponsor_terms != "yes":
+        flash("You must agree to the sponsorship terms before continuing.", "error")
+        return redirect(url_for("sponsorship.public_sponsorship_page", show_slug=show_slug))
+        
 
     catalog_id_raw = request.form.get("catalog_id", "").strip()
     if not catalog_id_raw.isdigit():
