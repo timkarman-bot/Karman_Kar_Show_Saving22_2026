@@ -228,12 +228,22 @@ if (!agree || !agree.checked) {
 
       const data = await res.json();
 
-      if (!data.ok) {
+            if (!data.ok) {
         showError(data.error || "Network error. Please try again.");
         return;
       }
 
-      window.location.href = data.checkout_url;
+      if (data.redirect_url) {
+        window.location.href = data.redirect_url;
+        return;
+      }
+
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url;
+        return;
+      }
+
+      showError("No payment destination was returned.");
     } catch (ex) {
       showError("Network error. Please try again.");
     }

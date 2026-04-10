@@ -1843,15 +1843,142 @@ def finalize_vote_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
     finally:
         conn.close()
 
+        
+def finalize_external_vote_intent(vote_intent_id: int, approval_reference: str = "") -> Dict[str, Any]:
+    conn = _conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("BEGIN IMMEDIATE")
+
+        vi = cur.execute(
+            "SELECT * FROM vote_intents WHERE id = ? LIMIT 1",
+            (vote_intent_id,),
+        ).fetchone()
+        if not vi:
+            raise ValueError("Vote intent not found.")
+
+        synthetic_session_id = f"external_vote_{int(vi['id'])}"
+
+        existing_vote = cur.execute(
+            "SELECT id FROM votes WHERE stripe_session_id = ? LIMIT 1",
+            (synthetic_session_id,),
+        ).fetchone()
+
+        if not existing_vote:
+            cur.execute(
+                """
+                INSERT INTO votes (
+                    show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(vi["show_id"]),
+                    int(vi["show_car_id"]),
+                    vi["category"],
+                    int(vi["vote_qty"]),
+                    int(vi["amount_cents"]),
+                    synthetic_session_id,
+                ),
+            )
+
+        cur.execute(
+            """
+            UPDATE vote_intents
+            SET payment_status = 'paid',
+                paid_at = COALESCE(paid_at, datetime('now')),
+                stripe_payment_intent_id = COALESCE(NULLIF(?, ''), stripe_payment_intent_id)
+            WHERE id = ?
+            """,
+            (approval_reference, int(vi["id"])),
+        )
+
+        conn.commit()
+        return {
+            "vote_intent_id": int(vi["id"]),
+            "already_finalized": bool(existing_vote),
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def list_pending_vote_reviews(show_id: Optional[int] = None) -> List[sqlite3.Row]:
+    conn = _conn()
+    try:
+        if show_id is None:
+            rows = conn.execute(
+                """
+                SELECT
+                    vi.*,
+                    s.slug AS show_slug,
+                    s.title AS show_title,
+                    sc.car_number,
+                    sc.year,
+                    sc.make,
+                    sc.model,
+                    p.name AS owner_name
+                FROM vote_intents vi
+                JOIN shows s ON s.id = vi.show_id
+                JOIN show_cars sc ON sc.id = vi.show_car_id
+                JOIN people p ON p.id = sc.person_id
+                WHERE vi.payment_status = 'pending_review'
+                ORDER BY vi.created_at ASC, vi.id ASC
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT
+                    vi.*,
+                    s.slug AS show_slug,
+                    s.title AS show_title,
+                    sc.car_number,
+                    sc.year,
+                    sc.make,
+                    sc.model,
+                    p.name AS owner_name
+                FROM vote_intents vi
+                JOIN shows s ON s.id = vi.show_id
+                JOIN show_cars sc ON sc.id = vi.show_car_id
+                JOIN people p ON p.id = sc.person_id
+                WHERE vi.payment_status = 'pending_review'
+                  AND vi.show_id = ?
+                ORDER BY vi.created_at ASC, vi.id ASC
+                """,
+                (int(show_id),),
+            ).fetchall()
+        return rows
+    finally:
+        conn.close()
+
+
+def reject_external_vote_intent(vote_intent_id: int, rejection_reference: str = "") -> None:
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            UPDATE vote_intents
+            SET payment_status = 'rejected',
+                stripe_payment_intent_id = COALESCE(NULLIF(?, ''), stripe_payment_intent_id)
+            WHERE id = ?
+            """,
+            (rejection_reference, int(vote_intent_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def reset_votes_for_show(show_id: int) -> None:
     conn = _conn()
     conn.execute("DELETE FROM votes WHERE show_id = ?", (show_id,))
     conn.execute("DELETE FROM vote_intents WHERE show_id = ?", (show_id,))
     conn.commit()
-    conn.close()
-
-
+    conn.close()        
+        
 def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
     rows = conn.execute(

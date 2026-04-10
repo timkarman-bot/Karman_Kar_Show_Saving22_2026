@@ -11,6 +11,84 @@
     </p>
   </div>
 
+  {% if pending_vote_reviews %}
+  <section class="rounded-3xl border border-amber-200 bg-amber-50 p-6">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <div class="text-xs font-semibold tracking-wide text-amber-700">VOTE REVIEW</div>
+        <h2 class="mt-1 text-2xl font-semibold text-slate-900">Pending External Vote Reviews</h2>
+        <p class="mt-1 text-sm text-amber-900">
+          These votes were submitted without an exact payment-note match and need review.
+        </p>
+      </div>
+      <div class="rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 border border-amber-200">
+        {{ pending_vote_reviews|length }} pending
+      </div>
+    </div>
+
+    <div class="mt-5 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="text-left text-slate-600 border-b border-amber-200">
+            <th class="py-2 pr-4">Created</th>
+            <th class="py-2 pr-4">Show</th>
+            <th class="py-2 pr-4">Car</th>
+            <th class="py-2 pr-4">Category</th>
+            <th class="py-2 pr-4">Votes</th>
+            <th class="py-2 pr-4">Amount</th>
+            <th class="py-2 pr-4">Owner</th>
+            <th class="py-2 pr-4">Reference</th>
+            <th class="py-2 pr-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for vote in pending_vote_reviews %}
+          <tr class="border-b border-amber-100 align-top">
+            <td class="py-3 pr-4 whitespace-nowrap">{{ vote["created_at"] }}</td>
+            <td class="py-3 pr-4">
+              <div class="font-medium text-slate-900">{{ vote["show_title"] }}</div>
+              <div class="text-xs text-slate-500">{{ vote["show_slug"] }}</div>
+            </td>
+            <td class="py-3 pr-4">
+              <div class="font-medium text-slate-900">#{{ vote["car_number"] }}</div>
+              <div class="text-xs text-slate-500">{{ vote["year"] }} {{ vote["make"] }} {{ vote["model"] }}</div>
+            </td>
+            <td class="py-3 pr-4">{{ vote["category"] }}</td>
+            <td class="py-3 pr-4">{{ vote["vote_qty"] }}</td>
+            <td class="py-3 pr-4">${{ '%.2f'|format((vote["amount_cents"] or 0) / 100) }}</td>
+            <td class="py-3 pr-4">{{ vote["owner_name"] }}</td>
+            <td class="py-3 pr-4 text-xs text-slate-600 break-all">
+              {{ vote["stripe_payment_intent_id"] or "" }}
+            </td>
+            <td class="py-3 pr-4">
+              <div class="flex flex-wrap gap-2">
+                <form method="POST" action="{{ url_for('admin_approve_vote', vote_intent_id=vote['id']) }}">
+                  <button type="submit" class="rounded-2xl bg-green-600 px-4 py-2 text-white font-semibold hover:bg-green-700">
+                    Approve
+                  </button>
+                </form>
+
+                <form method="POST" action="{{ url_for('admin_reject_vote', vote_intent_id=vote['id']) }}">
+                  <button type="submit" class="rounded-2xl bg-white px-4 py-2 text-slate-700 font-semibold border border-slate-300 hover:bg-slate-50">
+                    Reject
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% else %}
+  <section class="rounded-3xl border border-slate-200 bg-white p-6">
+    <div class="text-xs font-semibold tracking-wide text-slate-500">VOTE REVIEW</div>
+    <h2 class="mt-1 text-2xl font-semibold text-slate-900">Pending External Vote Reviews</h2>
+    <p class="mt-1 text-sm text-slate-600">No votes are waiting for review right now.</p>
+  </section>
+  {% endif %}
+
   <!-- CREATE NEW SHOW -->
   <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
     <div class="flex items-center justify-between gap-4 mb-6">
