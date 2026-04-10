@@ -1819,7 +1819,6 @@ def external_vote_payment_page(vote_intent_id: int):
         note_token=note_token,
     )
 
-
 @app.post("/vote/external/confirm")
 @rate_limit("external_vote_confirm", 20, 300)
 def external_vote_confirm():
@@ -3634,85 +3633,7 @@ def external_vote_payment_page(vote_intent_id: int):
         amount_cents=int(vote_intent["amount_cents"] or 0),
         note_token=note_token,
     )
-    
-@app.post("/vote/external/confirm")
-@rate_limit("external_vote_confirm", 20, 300)
-def external_vote_confirm():
-    vote_intent_id_raw = request.form.get("vote_intent_id", "").strip()
-    payer_name = request.form.get("payer_name", "").strip()
-    payment_note = request.form.get("payment_note", "").strip().upper()
-
-    try:
-        vote_intent_id = int(vote_intent_id_raw)
-    except ValueError:
-        return "Invalid vote intent.", 400
-
-    conn = _conn_direct()
-    try:
-        vote_intent = conn.execute(
-            "SELECT * FROM vote_intents WHERE id = ? LIMIT 1",
-            (vote_intent_id,),
-        ).fetchone()
-        if not vote_intent:
-            return "Vote intent not found.", 404
-
-        car = conn.execute(
-            "SELECT car_number FROM show_cars WHERE id = ? LIMIT 1",
-            (int(vote_intent["show_car_id"]),),
-        ).fetchone()
-
-        show = conn.execute(
-            "SELECT slug FROM shows WHERE id = ? LIMIT 1",
-            (int(vote_intent["show_id"]),),
-        ).fetchone()
-
-        if not car or not show:
-            return "Vote details not found.", 404
-
-        category_code_map = {
-            "People’s Choice": "PC",
-            "Army": "ARMY",
-            "Navy": "NAVY",
-            "Air Force": "AF",
-            "Marines": "MAR",
-            "Coast Guard": "CG",
-            "Space Force": "SF",
-        }
-
-        show_code = "".join(ch for ch in (show["slug"] or "").upper() if ch.isalnum())[:6] or "SHOW"
-        expected_note = f"{show_code}-{int(car['car_number']):03d}-{category_code_map.get(vote_intent['category'], 'VOTE')}-{int(vote_intent['vote_qty'])}"
-
-        approval_reference = f"external:{payer_name} | {payment_note}".strip()
-
-        if payment_note == expected_note:
-            conn.close()
-            finalize_external_vote_intent(
-                vote_intent_id,
-                approval_reference=approval_reference,
-            )
-            flash("Payment note matched. Your votes were approved automatically.", "ok")
-        else:
-            conn.execute(
-                """
-                UPDATE vote_intents
-                SET payment_status = 'pending_review',
-                    stripe_payment_intent_id = ?
-                WHERE id = ?
-                """,
-                (approval_reference, vote_intent_id),
-            )
-            conn.commit()
-            flash("Payment submitted. It has been sent for review before votes are counted.", "ok")
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-    active_show = get_active_show()
-    if active_show:
-        return redirect(url_for("show_page", slug=active_show["slug"]))
-    return redirect(url_for("home"))
+   
         
 @app.get("/success")
 def vote_success():
@@ -4839,85 +4760,6 @@ def stripe_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
-    
-@app.post("/vote/external/confirm")
-@rate_limit("external_vote_confirm", 20, 300)
-def external_vote_confirm():
-    vote_intent_id_raw = request.form.get("vote_intent_id", "").strip()
-    payer_name = request.form.get("payer_name", "").strip()
-    payment_note = request.form.get("payment_note", "").strip().upper()
-
-    try:
-        vote_intent_id = int(vote_intent_id_raw)
-    except ValueError:
-        return "Invalid vote intent.", 400
-
-    conn = _conn_direct()
-    try:
-        vote_intent = conn.execute(
-            "SELECT * FROM vote_intents WHERE id = ? LIMIT 1",
-            (vote_intent_id,),
-        ).fetchone()
-        if not vote_intent:
-            return "Vote intent not found.", 404
-
-        car = conn.execute(
-            "SELECT car_number FROM show_cars WHERE id = ? LIMIT 1",
-            (int(vote_intent["show_car_id"]),),
-        ).fetchone()
-
-        show = conn.execute(
-            "SELECT slug FROM shows WHERE id = ? LIMIT 1",
-            (int(vote_intent["show_id"]),),
-        ).fetchone()
-
-        if not car or not show:
-            return "Vote details not found.", 404
-
-        category_code_map = {
-            "People’s Choice": "PC",
-            "Army": "ARMY",
-            "Navy": "NAVY",
-            "Air Force": "AF",
-            "Marines": "MAR",
-            "Coast Guard": "CG",
-            "Space Force": "SF",
-        }
-
-        show_code = "".join(ch for ch in (show["slug"] or "").upper() if ch.isalnum())[:6] or "SHOW"
-        expected_note = f"{show_code}-{int(car['car_number']):03d}-{category_code_map.get(vote_intent['category'], 'VOTE')}-{int(vote_intent['vote_qty'])}"
-
-        approval_reference = f"external:{payer_name} | {payment_note}".strip()
-
-        if payment_note == expected_note:
-            conn.close()
-            finalize_external_vote_intent(
-                vote_intent_id,
-                approval_reference=approval_reference,
-            )
-            flash("Payment note matched. Your votes were approved automatically.", "ok")
-        else:
-            conn.execute(
-                """
-                UPDATE vote_intents
-                SET payment_status = 'pending_review',
-                    stripe_payment_intent_id = ?
-                WHERE id = ?
-                """,
-                (approval_reference, vote_intent_id),
-            )
-            conn.commit()
-            flash("Payment submitted. It has been sent for review before votes are counted.", "ok")
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-    active_show = get_active_show()
-    if active_show:
-        return redirect(url_for("show_page", slug=active_show["slug"]))
-    return redirect(url_for("home"))
         
 @app.get("/success")
 def vote_success():
