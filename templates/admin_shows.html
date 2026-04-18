@@ -89,7 +89,6 @@
   </section>
   {% endif %}
 
-  <!-- CREATE NEW SHOW -->
   <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
     <div class="flex items-center justify-between gap-4 mb-6">
       <div>
@@ -157,6 +156,39 @@
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1">Admission Fee</label>
         <input name="suggested_donation" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Voting Payment Mode</label>
+        <select name="payment_mode" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <option value="stripe" selected>Platform (Stripe)</option>
+          <option value="external">External Charity Payment Link</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Charity Payment Label</label>
+        <input
+          name="charity_processor_label"
+          class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+          placeholder="Example: Complete The Mission Payment">
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Charity Payment Link</label>
+        <input
+          type="url"
+          name="external_payment_url"
+          class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+          placeholder="https://...">
+        <div class="mt-1 text-xs text-slate-500">
+          Used only when Voting Payment Mode is set to External Charity Payment Link.
+        </div>
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Vote Payment Disclosure</label>
+        <textarea name="public_vote_disclosure" rows="3" class="w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="Example: Vote payments are processed through the event payment system. A portion of each vote payment supports the named charity, and votes are counted after payment verification."></textarea>
       </div>
 
       <div>
@@ -270,7 +302,6 @@
     </form>
   </section>
 
-  <!-- EDIT EXISTING SHOWS -->
   {% for s in shows %}
   <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
     <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -357,40 +388,44 @@
         <label class="block text-sm font-medium text-slate-700 mb-1">Admission Fee</label>
         <input name="suggested_donation" value="{{ s['suggested_donation'] or '' }}" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
         <div class="mt-1 text-xs text-slate-500">
-          This is the event admission fee. Voting donations are handled separately.
+          This is the regular event admission fee. Voting payments are handled separately.
         </div>
       </div>
 
-      <!-- VOTING / PAYMENT SETTINGS -->
-<div>
-  <label class="block text-sm font-medium text-slate-700 mb-1">Voting Payment Mode</label>
-  <select name="payment_mode" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
-    <option value="stripe" {% if (s['payment_mode'] or 'stripe') == 'stripe' %}selected{% endif %}>Platform (Stripe)</option>
-    <option value="external" {% if (s['payment_mode'] or '') == 'external' %}selected{% endif %}>Charity (External)</option>
-  </select>
-</div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Voting Payment Mode</label>
+        <select name="payment_mode" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <option value="stripe" {% if (s['payment_mode'] or 'stripe') == 'stripe' %}selected{% endif %}>Platform (Stripe)</option>
+          <option value="external" {% if (s['payment_mode'] or '') == 'external' %}selected{% endif %}>External Charity Payment Link</option>
+        </select>
+      </div>
 
-<div>
-  <label class="block text-sm font-medium text-slate-700 mb-1">Charity Payment Label</label>
-  <input
-    name="charity_processor_label"
-    value="{{ s['charity_processor_label'] or '' }}"
-    placeholder="Example: Complete The Mission"
-    class="w-full rounded-2xl border border-slate-200 px-4 py-3">
-</div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Charity Payment Label</label>
+        <input
+          name="charity_processor_label"
+          value="{{ s['charity_processor_label'] or '' }}"
+          class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+          placeholder="Example: Complete The Mission Payment">
+      </div>
 
-<div class="md:col-span-2">
-  <label class="block text-sm font-medium text-slate-700 mb-1">Charity Payment Link</label>
-  <input
-    type="url"
-    name="external_payment_url"
-    value="{{ s['external_payment_url'] or '' }}"
-    placeholder="https://charity-payment-page.com/..."
-    class="w-full rounded-2xl border border-slate-200 px-4 py-3">
-  <div class="mt-1 text-xs text-slate-500">
-    This is where voters will be sent to complete payment.
-  </div>
-</div>
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Charity Payment Link</label>
+        <input
+          type="url"
+          name="external_payment_url"
+          value="{{ s['external_payment_url'] or '' }}"
+          class="w-full rounded-2xl border border-slate-200 px-4 py-3"
+          placeholder="https://...">
+        <div class="mt-1 text-xs text-slate-500">
+          Used only when Voting Payment Mode is set to External Charity Payment Link.
+        </div>
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Vote Payment Disclosure</label>
+        <textarea name="public_vote_disclosure" rows="3" class="w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="Example: Vote payments are processed through the event payment system. A portion of each vote payment supports the named charity, and votes are counted after payment verification.">{{ s['public_vote_disclosure'] or '' }}</textarea>
+      </div>
 
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1">Status</label>
