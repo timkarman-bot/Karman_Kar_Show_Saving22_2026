@@ -2157,9 +2157,18 @@ def admin_command_center():
     search_results = search_show_cars_admin(int(show["id"]), q) if q else []
     cars = list_show_cars_public(int(show["id"])) or []
 
-    registered_paid = [c for c in cars if (c.get("registration_payment_status") or "") == "paid"]
-    placeholders = [c for c in cars if int(c.get("is_placeholder") or 0) == 1]
-    checked_in = [c for c in cars if c.get("checked_in_at")]
+    registered_paid = [
+        c for c in cars
+        if ("registration_payment_status" in c.keys() and (c["registration_payment_status"] or "") == "paid")
+    ]
+    placeholders = [
+        c for c in cars
+        if ("is_placeholder" in c.keys() and int(c["is_placeholder"] or 0) == 1)
+    ]
+    checked_in = [
+        c for c in cars
+        if ("checked_in_at" in c.keys() and c["checked_in_at"])
+    ]
 
     return render_template(
         "admin_command_center.html",
@@ -2171,7 +2180,7 @@ def admin_command_center():
         placeholders=placeholders,
         checked_in=checked_in,
     )
-
+    
 @app.get("/admin/vote-reviews")
 @require_admin
 def admin_vote_reviews():
