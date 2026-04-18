@@ -12,7 +12,7 @@
     <div class="flex flex-wrap gap-2">
       <a class="btn btn-outline" href="{{ url_for('admin_page') }}">Admin Home</a>
       <a class="btn btn-outline" href="{{ url_for('admin_car_search') }}">Search</a>
-      <a class="btn btn-outline" href="{{ url_for('admin_placeholder_cars') }}">Placeholders</a>
+      <a class="btn btn-outline" href="{{ url_for('admin_placeholders') }}">Placeholders</a>
       <a class="btn btn-primary" href="{{ url_for('admin_print_cards_pdf') }}?all=1" target="_blank">Print All Cards</a>
     </div>
   </div>
@@ -35,7 +35,7 @@
       <div class="mt-2 text-3xl font-semibold">{{ cars|length }}</div>
     </div>
   </div>
-  
+
   <div class="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
@@ -121,7 +121,7 @@
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <div class="text-lg font-semibold">Show-Day Actions</div>
       <div class="mt-4 grid gap-3">
-        <a class="btn btn-outline text-center" href="{{ url_for('admin_placeholder_cars') }}">Manage Placeholder Cards</a>
+        <a class="btn btn-outline text-center" href="{{ url_for('admin_placeholders') }}">Manage Placeholder Cards</a>
         <a class="btn btn-outline text-center" href="{{ url_for('admin_print_cards_pdf') }}?all=1" target="_blank">Print Full Card Set</a>
         <a class="btn btn-outline text-center" href="{{ url_for('admin_car_search') }}">Search Owners / Car Numbers</a>
       </div>
