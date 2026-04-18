@@ -318,7 +318,7 @@ def _show_external_payment_url(show: Any) -> str:
 
 def _show_external_payment_notice(show: Any) -> str:
     label = _show_external_payment_label(show)
-    return f"Payment will be completed through {label}. Votes will count after review."    
+    return f"Vote payment will be completed through {label}. Votes will count after payment review."    
 
 def _flyer_upload_dir() -> Path:
     p = Path("/data/uploads/flyers") if os.path.isdir("/data") else Path(app.instance_path) / "uploads" / "flyers"
@@ -1808,26 +1808,26 @@ def external_vote_payment_page(vote_intent_id: int):
     if not vote_intent:
         return "Vote request not found.", 404
 
-    show = get_show_by_slug(get_active_show()["slug"]) if get_active_show() else None
-    if not show or int(show["id"]) != int(vote_intent["show_id"]):
-        show = get_active_show()
-
+    show = None
     car = None
-    if show:
-        conn = _conn_direct()
-        try:
-            car = conn.execute(
-                """
-                SELECT sc.*, p.name AS owner_name
-                FROM show_cars sc
-                JOIN people p ON p.id = sc.person_id
-                WHERE sc.id = ?
-                LIMIT 1
-                """,
-                (int(vote_intent["show_car_id"]),),
-            ).fetchone()
-        finally:
-            conn.close()
+    conn = _conn_direct()
+    try:
+        show = conn.execute(
+            "SELECT * FROM shows WHERE id = ? LIMIT 1",
+            (int(vote_intent["show_id"]),),
+        ).fetchone()
+        car = conn.execute(
+            """
+            SELECT sc.*, p.name AS owner_name
+            FROM show_cars sc
+            JOIN people p ON p.id = sc.person_id
+            WHERE sc.id = ?
+            LIMIT 1
+            """,
+            (int(vote_intent["show_car_id"]),),
+        ).fetchone()
+    finally:
+        conn.close()
 
     return render_template(
         "external_vote_payment.html",
@@ -2312,6 +2312,7 @@ def admin_show_settings():
         public_donation_disclosure=request.form.get("public_donation_disclosure", ""),
         voting_mode=request.form.get("voting_mode", "fundraiser_unlimited").strip(),
         payment_mode=request.form.get("payment_mode", "stripe").strip(),
+        charity_processor_label=request.form.get("charity_processor_label", "").strip(),
         external_payment_url=request.form.get("external_payment_url", "").strip(),
         allow_custom_votes=1 if request.form.get("allow_custom_votes") else 0,
         preset_vote_options=request.form.get("preset_vote_options", "1,5,10,20,25").strip(),
@@ -2359,6 +2360,7 @@ def admin_shows_create():
     voting_mode = request.form.get("voting_mode", "fundraiser_unlimited").strip()
     payment_mode = request.form.get("payment_mode", "stripe").strip()
     external_payment_url = request.form.get("external_payment_url", "").strip()
+    charity_processor_label = request.form.get("charity_processor_label", "").strip()
     allow_custom_votes = 1 if request.form.get("allow_custom_votes") else 0
     preset_vote_options = request.form.get("preset_vote_options", "1,5,10,20,25").strip()
     max_votes_per_checkout_raw = request.form.get("max_votes_per_checkout", "50").strip()
@@ -2413,6 +2415,7 @@ def admin_shows_create():
         charity_description=request.form.get("charity_description", "").strip(),
         voting_mode=voting_mode,
         payment_mode=payment_mode,
+        charity_processor_label=charity_processor_label,
         external_payment_url=external_payment_url,
         allow_custom_votes=allow_custom_votes,
         preset_vote_options=preset_vote_options,
@@ -2439,6 +2442,7 @@ def admin_shows_update(show_id: int):
     voting_mode = request.form.get("voting_mode", "fundraiser_unlimited").strip()
     payment_mode = request.form.get("payment_mode", "stripe").strip()
     external_payment_url = request.form.get("external_payment_url", "").strip()
+    charity_processor_label = request.form.get("charity_processor_label", "").strip()
     allow_custom_votes = 1 if request.form.get("allow_custom_votes") else 0
     preset_vote_options = request.form.get("preset_vote_options", "1,5,10,20,25").strip()
     max_votes_per_checkout_raw = request.form.get("max_votes_per_checkout", "50").strip()
@@ -2495,6 +2499,7 @@ def admin_shows_update(show_id: int):
         charity_description=request.form.get("charity_description", "").strip(),
         voting_mode=voting_mode,
         payment_mode=payment_mode,
+        charity_processor_label=charity_processor_label,
         external_payment_url=external_payment_url,
         allow_custom_votes=allow_custom_votes,
         preset_vote_options=preset_vote_options,
