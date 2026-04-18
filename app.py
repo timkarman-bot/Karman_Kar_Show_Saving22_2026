@@ -1802,6 +1802,7 @@ def create_checkout_session():
         "checkout_url": session_obj.url,
     })
 
+@app.get("/vote/external/<int:vote_intent_id>")
 def external_vote_payment_page(vote_intent_id: int):
     vote_intent = get_vote_intent(vote_intent_id)
     if not vote_intent:
@@ -1835,8 +1836,8 @@ def external_vote_payment_page(vote_intent_id: int):
         car=car,
         external_payment_url=_show_external_payment_url(show),
         external_payment_label=_show_external_payment_label(show),
-    )    
-  
+    )
+
 
 @app.post("/vote/external/<int:vote_intent_id>/submitted")
 @rate_limit("vote_external_submitted", 20, 300)
@@ -1845,7 +1846,22 @@ def external_vote_mark_submitted(vote_intent_id: int):
     if not vote_intent:
         return "Vote request not found.", 404
 
-return redirect(url_for("vote_success", pending=1))
+    conn = _conn_direct()
+    try:
+        conn.execute(
+            """
+            UPDATE vote_intents
+            SET payment_status = 'pending_review'
+            WHERE id = ?
+            """,
+            (int(vote_intent_id),),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return redirect(url_for("vote_success", pending=1))
+
 
 @app.get("/success")
 def vote_success():
