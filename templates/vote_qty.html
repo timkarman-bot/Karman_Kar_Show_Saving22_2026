@@ -39,7 +39,7 @@
     {% if show["public_vote_disclosure"] %}
       <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
         <div class="text-xs font-semibold uppercase tracking-wide text-amber-800">
-          Donation Notice
+          Vote Payment Notice
         </div>
         <div class="mt-1 text-sm text-amber-900 whitespace-pre-line">
           {{ show["public_vote_disclosure"] }}
@@ -54,10 +54,11 @@
         ${{ '%.2f'|format((vote_price_cents or 100) / 100) }} per vote
         • Max {{ max_votes_per_checkout }} per checkout
       </div>
-         
+
       <div class="text-xs text-slate-500">
-       All votes are charitable donations supporting the event cause.
+        Vote payments are processed under the event’s payment setup and counted after verification.
       </div>
+
       {% if payment_mode == "external" %}
         <div class="mt-2 text-sm text-slate-600">
           Payment will be completed through the configured charity payment link. Votes will count after admin review.
@@ -84,7 +85,7 @@
     </div>
 
     <div class="mt-4 text-sm text-slate-600">
-      Admission and registration fees apply. Voting is optional and treated as a charitable donation supporting the event cause.
+      Registration and admission are separate fees. Voting is optional and processed separately.
     </div>
 
       {% if allow_custom_votes %}
@@ -105,12 +106,12 @@
           </div>
         </div>
       {% endif %}
-      
+
       <div class="mt-5 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
        <label class="flex items-start gap-2">
          <input type="checkbox" id="voteAgree" class="mt-1">
          <span>
-           I understand votes are charitable donations, are non-refundable, and subject to event rules.
+           I understand vote payments are non-refundable and subject to event rules.
            <a href="/privacy" class="underline">Privacy Policy</a>
         </span>
        </label>
@@ -210,12 +211,12 @@
 
   document.getElementById("voteForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    
-const agree = document.getElementById("voteAgree");
-if (!agree || !agree.checked) {
-  showError("You must agree before continuing.");
-  return;
-}
+
+    const agree = document.getElementById("voteAgree");
+    if (!agree || !agree.checked) {
+      showError("You must agree before continuing.");
+      return;
+    }
     clearError();
 
     try {
@@ -228,7 +229,7 @@ if (!agree || !agree.checked) {
 
       const data = await res.json();
 
-            if (!data.ok) {
+      if (!data.ok) {
         showError(data.error || "Network error. Please try again.");
         return;
       }

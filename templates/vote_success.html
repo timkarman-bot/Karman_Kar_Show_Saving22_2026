@@ -21,16 +21,16 @@
 
     <p class="mt-3 text-slate-600">
       {% if pending_mode %}
-        Thank you for supporting the show and the cause. Your vote will count after payment review.
+        Thank you. Your vote payment was submitted and your vote will count after payment review.
       {% else %}
-        Thank you for supporting the show and the cause.
+        Thank you. Your vote payment was verified and your votes have been recorded.
       {% endif %}
     </p>
 
     {% if success_show and success_show["public_vote_disclosure"] %}
       <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Payment Notice
+          Vote Payment Notice
         </div>
         <div class="mt-1 text-sm text-slate-700 whitespace-pre-line">
           {{ success_show["public_vote_disclosure"] }}
