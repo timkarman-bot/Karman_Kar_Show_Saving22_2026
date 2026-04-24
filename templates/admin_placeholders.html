@@ -83,6 +83,22 @@
       <button class="btn btn-primary" type="button" onclick="printSelected()">
         Print selected (PDF)
       </button>
+
+      <a
+  id="bulkPrintRegisteredBtn"
+  class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+  href="{{ url_for('admin_print_cards_pdf') }}?all=1&mode=registered"
+  target="_blank">
+  Print REGISTERED cards
+</a>
+
+<a
+  id="bulkPrintUnusedBtn"
+  class="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50"
+  href="{{ url_for('admin_print_cards_pdf') }}?all=1&mode=unused&back=1"
+  target="_blank">
+  Print OPEN day-of cards
+</a>
     </div>
 
     <div class="mt-4 overflow-x-auto">
@@ -230,21 +246,31 @@ function printSelected() {
 
 (function () {
   const cb = document.getElementById("printBack");
-  const bulkBtn = document.getElementById("bulkPrintAllBtn");
-  if (!cb || !bulkBtn) return;
+  const buttons = [
+    document.getElementById("bulkPrintAllBtn"),
+    document.getElementById("bulkPrintRegisteredBtn"),
+    document.getElementById("bulkPrintUnusedBtn"),
+  ].filter(Boolean);
 
-  const baseHref = bulkBtn.getAttribute("href").split("&back=")[0].split("?back=")[0];
+  if (!cb || !buttons.length) return;
 
-  function updateBulkHref() {
-    let href = baseHref;
-    if (cb.checked) {
-      href += (href.includes("?") ? "&" : "?") + "back=1";
-    }
-    bulkBtn.setAttribute("href", href);
+  const baseHrefs = new Map();
+  buttons.forEach(btn => {
+    baseHrefs.set(btn, btn.getAttribute("href").replace(/&?back=1/g, ""));
+  });
+
+  function updateBulkHrefs() {
+    buttons.forEach(btn => {
+      let href = baseHrefs.get(btn);
+      if (cb.checked) {
+        href += (href.includes("?") ? "&" : "?") + "back=1";
+      }
+      btn.setAttribute("href", href);
+    });
   }
 
-  cb.addEventListener("change", updateBulkHref);
-  updateBulkHref();
+  cb.addEventListener("change", updateBulkHrefs);
+  updateBulkHrefs();
 })();
 </script>
 {% endblock %}

@@ -980,10 +980,17 @@ def export_show_row(show_id: int):
 
 def count_registered_cars(show_id: int) -> int:
     conn = _conn()
-    row = conn.execute("SELECT COUNT(*) AS cnt FROM show_cars WHERE show_id = ?", (show_id,)).fetchone()
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM show_cars
+        WHERE show_id = ?
+          AND COALESCE(is_placeholder, 0) = 0
+        """,
+        (show_id,),
+    ).fetchone()
     conn.close()
     return int(row["cnt"] or 0)
-
 
 def show_has_capacity(show_id: int) -> bool:
     show = export_show_row(show_id)
@@ -1214,14 +1221,28 @@ def update_person(person_id: int, name: str, phone: str, email: str, opt_in_futu
 def create_show_car(show_id: int, person_id: int, car_number: int, year: str, make: str, model: str) -> Tuple[int, str]:
     conn = _conn()
     cur = conn.cursor()
-    show = cur.execute("SELECT max_cars FROM shows WHERE id = ? LIMIT 1", (show_id,)).fetchone()
+
+    show = cur.execute(
+        "SELECT max_cars FROM shows WHERE id = ? LIMIT 1",
+        (show_id,),
+    ).fetchone()
+
     if show and show["max_cars"] is not None:
         try:
             max_cars = int(show["max_cars"])
         except Exception:
             max_cars = None
+
         if max_cars and max_cars > 0:
-            row = cur.execute("SELECT COUNT(*) AS cnt FROM show_cars WHERE show_id = ?", (show_id,)).fetchone()
+            row = cur.execute(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM show_cars
+                WHERE show_id = ?
+                  AND COALESCE(is_placeholder, 0) = 0
+                """,
+                (show_id,),
+            ).fetchone()
             if int(row["cnt"] or 0) >= max_cars:
                 conn.close()
                 raise ValueError("This show has reached its maximum number of cars.")
@@ -1232,9 +1253,9 @@ def create_show_car(show_id: int, person_id: int, car_number: int, year: str, ma
             """
             INSERT INTO show_cars (
                 show_id, person_id, car_number, car_token, year, make, model,
-                is_placeholder, registration_state
+                is_placeholder, registration_state, registration_payment_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'paid')
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'claimed', 'paid')
             """,
             (show_id, person_id, car_number, token, year, make, model),
         )
@@ -1245,7 +1266,6 @@ def create_show_car(show_id: int, person_id: int, car_number: int, year: str, ma
     except sqlite3.IntegrityError as e:
         conn.close()
         raise ValueError("That car number is already registered for this show.") from e
-
 
 def update_show_car_details(show_car_id: int, year: str, make: str, model: str) -> None:
     conn = _conn()
@@ -1517,6 +1537,7 @@ def create_registration_intent(
                 WHERE show_id = ?
                   AND car_number = ?
                   AND COALESCE(is_placeholder, 0) = 1
+                  AND COALESCE(registration_state, '') = 'placeholder'
                 LIMIT 1
                 """,
                 (show_id, car_number),
@@ -1524,7 +1545,22 @@ def create_registration_intent(
             if not existing_placeholder:
                 raise ValueError("That placeholder car number is no longer available.")
         else:
-            car_number = get_next_available_car_number(show_id)
+            next_placeholder = cur.execute(
+                """
+                SELECT car_number
+                FROM show_cars
+                WHERE show_id = ?
+                  AND COALESCE(is_placeholder, 0) = 1
+                  AND COALESCE(registration_state, '') = 'placeholder'
+                ORDER BY car_number ASC
+                LIMIT 1
+                """,
+                (show_id,),
+            ).fetchone()
+            if next_placeholder:
+                car_number = int(next_placeholder["car_number"])
+            else:
+                car_number = get_next_available_car_number(show_id)
 
         token = _new_token()
         cur.execute(
@@ -1637,7 +1673,9 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
             """
             SELECT id
             FROM show_cars
-            WHERE show_id = ? AND car_number = ?
+            WHERE show_id = ?
+              AND car_number = ?
+              AND COALESCE(is_placeholder, 0) = 0
             LIMIT 1
             """,
             (show_id, int(ri["car_number"])),
@@ -1668,37 +1706,92 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
         )
         person_id = int(cur.lastrowid)
 
-        car_token = _new_car_token()
-        cur.execute(
+        placeholder = cur.execute(
             """
-            INSERT INTO show_cars (
-                show_id, person_id, car_number, car_token, year, make, model,
-                registration_payment_status, registration_amount_cents, registration_session_id,
-                waiver_signed_name, waiver_signed_at, waiver_version, waiver_text, waiver_text_sha256, waiver_template_id,
-                waiver_received, waiver_received_at, waiver_received_by,
-                is_placeholder, registration_state
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, 1, datetime('now'), 'electronic', 0, 'paid')
+            SELECT id, car_token
+            FROM show_cars
+            WHERE show_id = ?
+              AND car_number = ?
+              AND COALESCE(is_placeholder, 0) = 1
+              AND COALESCE(registration_state, '') = 'placeholder'
+            LIMIT 1
             """,
-            (
-                show_id,
-                person_id,
-                int(ri["car_number"]),
-                car_token,
-                ri["year"],
-                ri["make"],
-                ri["model"],
-                "paid",
-                int(ri["amount_cents"] or 0),
-                stripe_session_id,
-                ri["waiver_signed_name"],
-                ri["waiver_version"],
-                ri["waiver_text"],
-                ri["waiver_text_sha256"],
-                ri["waiver_template_id"] if "waiver_template_id" in ri.keys() else None,
-            ),
-        )
-        show_car_id = int(cur.lastrowid)
+            (show_id, int(ri["car_number"])),
+        ).fetchone()
+
+        if placeholder:
+            show_car_id = int(placeholder["id"])
+            car_token = placeholder["car_token"]
+            cur.execute(
+                """
+                UPDATE show_cars
+                SET person_id = ?,
+                    year = ?,
+                    make = ?,
+                    model = ?,
+                    registration_payment_status = 'paid',
+                    registration_amount_cents = ?,
+                    registration_session_id = ?,
+                    waiver_signed_name = ?,
+                    waiver_signed_at = datetime('now'),
+                    waiver_version = ?,
+                    waiver_text = ?,
+                    waiver_text_sha256 = ?,
+                    waiver_template_id = ?,
+                    waiver_received = 1,
+                    waiver_received_at = datetime('now'),
+                    waiver_received_by = 'electronic',
+                    is_placeholder = 0,
+                    registration_state = 'claimed'
+                WHERE id = ?
+                """,
+                (
+                    person_id,
+                    ri["year"],
+                    ri["make"],
+                    ri["model"],
+                    int(ri["amount_cents"] or 0),
+                    stripe_session_id,
+                    ri["waiver_signed_name"],
+                    ri["waiver_version"],
+                    ri["waiver_text"],
+                    ri["waiver_text_sha256"],
+                    ri["waiver_template_id"] if "waiver_template_id" in ri.keys() else None,
+                    show_car_id,
+                ),
+            )
+        else:
+            car_token = _new_car_token()
+            cur.execute(
+                """
+                INSERT INTO show_cars (
+                    show_id, person_id, car_number, car_token, year, make, model,
+                    registration_payment_status, registration_amount_cents, registration_session_id,
+                    waiver_signed_name, waiver_signed_at, waiver_version, waiver_text, waiver_text_sha256, waiver_template_id,
+                    waiver_received, waiver_received_at, waiver_received_by,
+                    is_placeholder, registration_state
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, 1, datetime('now'), 'electronic', 0, 'claimed')
+                """,
+                (
+                    show_id,
+                    person_id,
+                    int(ri["car_number"]),
+                    car_token,
+                    ri["year"],
+                    ri["make"],
+                    ri["model"],
+                    "paid",
+                    int(ri["amount_cents"] or 0),
+                    stripe_session_id,
+                    ri["waiver_signed_name"],
+                    ri["waiver_version"],
+                    ri["waiver_text"],
+                    ri["waiver_text_sha256"],
+                    ri["waiver_template_id"] if "waiver_template_id" in ri.keys() else None,
+                ),
+            )
+            show_car_id = int(cur.lastrowid)
 
         cur.execute(
             """

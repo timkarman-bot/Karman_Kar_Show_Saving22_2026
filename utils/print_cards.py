@@ -13,10 +13,8 @@ from PIL import Image
 CATEGORY_SLUGS: List[Tuple[str, str]] = [
     ("army", "Army"),
     ("navy", "Navy"),
-    ("air-force", "Air Force"),
     ("marines", "Marines"),
-    ("coast-guard", "Coast Guard"),
-    ("space-force", "Space Force"),
+    ("air-force", "Air Force"),
     ("peoples-choice", "People’s Choice"),
 ]
 
@@ -293,12 +291,11 @@ def build_landscape_cards_pdf(
 
         c.setFont("Helvetica", 8.5)
         branch_lines = [
-            "Army, Navy, Air Force, Marines,",
-            "Coast Guard, and Space Force are for",
-            "veterans, active military, or",
-            "in memory of a veteran.",
+            "Army, Navy, Marines, and Air Force",
+            "awards are voted on by veterans.",
             "People's Choice is open to everyone.",
         ]
+        
         yy = body_y + 76
         for line in branch_lines:
             c.drawString(margin + 12, yy, line)

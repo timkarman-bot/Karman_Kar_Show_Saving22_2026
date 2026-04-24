@@ -177,8 +177,6 @@ CATEGORY_SLUGS: Dict[str, str] = {
     "navy": "Navy",
     "air-force": "Air Force",
     "marines": "Marines",
-    "coast-guard": "Coast Guard",
-    "space-force": "Space Force",
     "peoples-choice": "People’s Choice",
 }
 
@@ -741,7 +739,7 @@ def _finalize_placeholder_claim_paid(*, stripe_session_id: str, show_car_id: int
                 waiver_received_at = datetime('now'),
                 waiver_received_by = 'electronic',
                 is_placeholder = 0,
-                registration_state = 'paid'
+                registration_state = 'claimed / paid'
             WHERE id = ?
             """,
             (
@@ -1248,7 +1246,15 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
     car = get_show_car_private_by_token(int(show["id"]), car_token)
     if not car:
         return "Car not found.", 404
+    if int(car["is_placeholder"] or 0) != 1:
+        return "This car number has already been assigned.", 400
 
+    if str(car["registration_state"] or "").lower() != "placeholder":
+        return "This car has already been claimed.", 400
+
+    if str(car["registration_payment_status"] or "").lower() == "paid":
+        return "This car is already registered.", 400
+    
     owner_name = request.form.get("name", "").strip()
     phone = request.form.get("phone", "").strip()
     email = request.form.get("email", "").strip().lower()
@@ -2647,12 +2653,31 @@ def admin_print_cards_pdf():
     ids_raw = request.args.get("ids", "").strip()
     all_raw = request.args.get("all", "").strip()
     include_back = request.args.get("back", "").strip() == "1"
+    print_mode = request.args.get("mode", "").strip().lower()
 
     cars = list_show_cars_public(int(show["id"]))
     if not cars:
         return "No cars to print.", 400
 
+    if print_mode == "registered":
+        cars = [
+            r for r in cars
+            if int(r["is_placeholder"] or 0) == 0
+            and str(r["registration_payment_status"] or "").lower() == "paid"
+        ]
+
+    elif print_mode == "unused":
+        cars = [
+            r for r in cars
+            if int(r["is_placeholder"] or 0) == 1
+            and str(r["registration_state"] or "").lower() == "placeholder"
+        ]
+
+    if not cars:
+        return "No cars match selected print mode.", 400
+
     selected = cars
+
     if all_raw != "1":
         want_ids = set()
         if ids_raw:
@@ -2665,6 +2690,9 @@ def admin_print_cards_pdf():
             return "No cars selected.", 400
 
         selected = [r for r in cars if int(r["id"]) in want_ids]
+
+        if not selected:
+            return "No selected cars match selected print mode.", 400
 
     title_sponsor, sponsors = get_show_sponsors(int(show["id"])) or (None, [])
 
@@ -2682,7 +2710,11 @@ def admin_print_cards_pdf():
     _log_event(
         "admin.print_cards_exported",
         int(show["id"]),
-        {"count": len(selected), "include_back": include_back},
+        {
+            "count": len(selected),
+            "include_back": include_back,
+            "mode": print_mode or "all",
+        },
         actor_type="admin",
     )
 
