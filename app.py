@@ -2740,7 +2740,6 @@ def admin_print_cards_pdf():
         download_name=f"{show['slug']}-voting-cards-landscape.pdf",
     )
 
-
 @app.get("/admin/export-snapshot.zip")
 @require_admin
 def admin_export_snapshot_zip():
