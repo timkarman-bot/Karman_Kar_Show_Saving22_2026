@@ -1242,6 +1242,28 @@ def placeholder_claim_success(show_slug: str, intent_token: str):
     car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
     return render_template("placeholder_claim_success.html", show=show, car=car)
 
+@app.get("/claim/<show_slug>/<car_token>")
+def placeholder_claim_page(show_slug: str, car_token: str):
+    show = _show_with_rendered_waiver(get_show_by_slug(show_slug))
+    if not show:
+        return "Show not found.", 404
+
+    car = get_show_car_private_by_token(int(show["id"]), car_token)
+    if not car:
+        return "Car not found.", 404
+
+    if int(car["is_placeholder"] or 0) != 1:
+        return "This car number has already been assigned.", 400
+
+    if str(car["registration_state"] or "").lower() != "placeholder":
+        return "This car has already been claimed.", 400
+
+    if str(car["registration_payment_status"] or "").lower() == "paid":
+        return "This car is already registered.", 400
+
+    return render_template("placeholder_claim.html", show=show, car=car)
+
+
 @app.post("/claim/<show_slug>/<car_token>")
 @rate_limit("claim", 20, 300)
 def placeholder_claim_submit(show_slug: str, car_token: str):
