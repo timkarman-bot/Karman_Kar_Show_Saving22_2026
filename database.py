@@ -2097,10 +2097,31 @@ def reset_votes_for_show(show_id: int) -> None:
     conn.commit()
     conn.close()        
         
-def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
+def _vote_date_where_clause(start_date: str = "", end_date: str = "") -> Tuple[str, List[str]]:
+    """Builds an optional inclusive date filter for vote queries."""
+    where_parts: List[str] = []
+    params: List[str] = []
+
+    start_date = (start_date or "").strip()
+    end_date = (end_date or "").strip()
+
+    if start_date:
+        where_parts.append("date(v.created_at) >= date(?)")
+        params.append(start_date)
+    if end_date:
+        where_parts.append("date(v.created_at) <= date(?)")
+        params.append(end_date)
+
+    if not where_parts:
+        return "", []
+    return " AND " + " AND ".join(where_parts), params
+
+
+def export_votes_for_show(show_id: int, start_date: str = "", end_date: str = "") -> List[sqlite3.Row]:
     conn = _conn()
+    date_where, date_params = _vote_date_where_clause(start_date, end_date)
     rows = conn.execute(
-        """
+        f"""
         SELECT
             v.created_at,
             v.category,
@@ -2120,27 +2141,28 @@ def export_votes_for_show(show_id: int) -> List[sqlite3.Row]:
         FROM votes v
         JOIN show_cars sc ON sc.id = v.show_car_id
         JOIN people p ON p.id = sc.person_id
-        WHERE v.show_id = ?
+        WHERE v.show_id = ?{date_where}
         ORDER BY v.created_at ASC
         """,
-        (show_id,),
+        [show_id] + date_params,
     ).fetchall()
     conn.close()
     return rows
 
 
-def leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int, int]]]:
+def leaderboard_by_category(show_id: int, start_date: str = "", end_date: str = "") -> Dict[str, List[Tuple[int, int]]]:
     conn = _conn()
+    date_where, date_params = _vote_date_where_clause(start_date, end_date)
     rows = conn.execute(
-        """
+        f"""
         SELECT v.category, sc.car_number, SUM(v.vote_qty) as total_votes
         FROM votes v
         JOIN show_cars sc ON sc.id = v.show_car_id
-        WHERE v.show_id = ?
+        WHERE v.show_id = ?{date_where}
         GROUP BY v.category, sc.car_number
         ORDER BY v.category ASC, total_votes DESC, sc.car_number ASC
         """,
-        (show_id,),
+        [show_id] + date_params,
     ).fetchall()
     conn.close()
     out: Dict[str, List[Tuple[int, int]]] = {}
@@ -2150,18 +2172,19 @@ def leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int, int]]]:
     return out
 
 
-def leaderboard_overall(show_id: int) -> List[Tuple[int, int]]:
+def leaderboard_overall(show_id: int, start_date: str = "", end_date: str = "") -> List[Tuple[int, int]]:
     conn = _conn()
+    date_where, date_params = _vote_date_where_clause(start_date, end_date)
     rows = conn.execute(
-        """
+        f"""
         SELECT sc.car_number, SUM(v.vote_qty) as total_votes
         FROM votes v
         JOIN show_cars sc ON sc.id = v.show_car_id
-        WHERE v.show_id = ?
+        WHERE v.show_id = ?{date_where}
         GROUP BY sc.car_number
         ORDER BY total_votes DESC, sc.car_number ASC
         """,
-        (show_id,),
+        [show_id] + date_params,
     ).fetchall()
     conn.close()
     return [(int(r["car_number"]), int(r["total_votes"] or 0)) for r in rows]

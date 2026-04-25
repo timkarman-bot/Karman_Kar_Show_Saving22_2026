@@ -2911,6 +2911,9 @@ def admin_leaderboard():
     if not show:
         return "No active show.", 500
 
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+
     # LIVE FIX 2026-04-25:
     # Before showing the leaderboard, catch up any paid platform Stripe vote sessions
     # that did not finalize through webhook/success return.
@@ -2919,8 +2922,10 @@ def admin_leaderboard():
     return render_template(
         "leaderboard.html",
         show=show,
-        by_category=leaderboard_by_category(int(show["id"])),
-        overall=leaderboard_overall(int(show["id"])),
+        by_category=leaderboard_by_category(int(show["id"]), start_date=start_date, end_date=end_date),
+        overall=leaderboard_overall(int(show["id"]), start_date=start_date, end_date=end_date),
+        start_date=start_date,
+        end_date=end_date,
     )
 
 
@@ -2930,7 +2935,9 @@ def admin_export_votes():
     show = get_active_show()
     if not show:
         return "No active show.", 500
-    rows = export_votes_for_show(int(show["id"]))
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+    rows = export_votes_for_show(int(show["id"]), start_date=start_date, end_date=end_date)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow([
@@ -2967,7 +2974,10 @@ def admin_export_votes():
     _log_event("admin.votes_exported", int(show["id"]), {"row_count": len(rows)}, actor_type="admin")
     mem = io.BytesIO(buf.getvalue().encode("utf-8"))
     mem.seek(0)
-    return send_file(mem, mimetype="text/csv", as_attachment=True, download_name="votes_export.csv")
+    suffix = ""
+    if start_date or end_date:
+        suffix = f"_{start_date or 'start'}_to_{end_date or 'end'}".replace("/", "-")
+    return send_file(mem, mimetype="text/csv", as_attachment=True, download_name=f"votes_export{suffix}.csv")
 
 
 @app.get("/admin/placeholders")
