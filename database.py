@@ -2797,6 +2797,25 @@ def _rows_to_csv_bytes(rows: List[sqlite3.Row]) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
+
+def export_table_rows_for_show(table_name: str, show_id: int) -> List[sqlite3.Row]:
+    """Generic safe export helper for optional show-scoped tables."""
+    conn = _conn()
+    try:
+        exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+            (table_name,),
+        ).fetchone()
+        if not exists:
+            return []
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
+        if "show_id" not in cols:
+            return []
+        rows = conn.execute(f"SELECT * FROM {table_name} WHERE show_id = ? ORDER BY id ASC", (show_id,)).fetchall()
+        return rows
+    finally:
+        conn.close()
+
 def build_snapshot_zip_bytes(show_id: int) -> Tuple[bytes, str]:
     show = export_show_row(show_id)
     if not show:
@@ -2817,6 +2836,11 @@ def build_snapshot_zip_bytes(show_id: int) -> Tuple[bytes, str]:
         zf.writestr("donations.csv", _rows_to_csv_bytes(export_donations_for_show(show_id)))
         zf.writestr("waiver_evidence.csv", _rows_to_csv_bytes(export_waiver_evidence_for_show(show_id)))
         zf.writestr("audit_logs.csv", _rows_to_csv_bytes(export_audit_logs_for_show(show_id)))
+        zf.writestr("attendees.csv", _rows_to_csv_bytes(export_table_rows_for_show("attendees", show_id)))
+        zf.writestr("field_metrics.csv", _rows_to_csv_bytes(export_table_rows_for_show("field_metrics", show_id)))
+        zf.writestr("sponsorship_catalog.csv", _rows_to_csv_bytes(export_table_rows_for_show("sponsorship_catalog", show_id)))
+        zf.writestr("sponsorship_sales.csv", _rows_to_csv_bytes(export_table_rows_for_show("sponsorship_sales", show_id)))
+        zf.writestr("show_sponsors.csv", _rows_to_csv_bytes(export_table_rows_for_show("show_sponsors", show_id)))
 
     mem.seek(0)
     return mem.getvalue(), filename

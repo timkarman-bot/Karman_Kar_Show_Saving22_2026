@@ -1,0 +1,84 @@
+Karman Kar Shows & Events platform update - 2026-05-04 v3
+
+Replace these files in the project root:
+- app.py
+- database.py
+- sponsorship_blueprint.py
+
+Replace/add these template files in templates/:
+- admin_shows.html
+- placeholder_claim.html
+- admin_sponsors.html
+- sponsorship.html
+- admin_show_mode.html
+
+What v3 adds/updates:
+1. Show-day staff page
+   - Admin route: /admin/show-mode
+   - Quick list of car numbers, placeholders, claimed cards, check-in links, and cash-payment review.
+
+2. Placeholder QR behavior
+   - Unclaimed placeholder QR opens the claim form.
+   - Claimed placeholder QR no longer errors; it redirects to the car card/info page.
+
+3. Cash registration flow
+   - Car registration and placeholder claim can use cash.
+   - Cash registrations are marked cash_pending first.
+   - Staff page can mark cash as paid.
+
+4. Guest attendance capture
+   - Attendance still records even when contact info is skipped.
+   - Optional form remains in place.
+
+5. Sponsorship controls
+   - Admin sponsor page now includes Hide Open Sponsorships button.
+   - Internal sale form includes discount amount and discount reason.
+   - Discounts are saved internally in the sale notes; public page does not show discount controls.
+
+6. Snapshot export upgraded
+   - /admin/export-snapshot.zip now includes attendees, field metrics, sponsorship catalog, sponsorship sales, and show sponsors if those tables exist.
+
+Deploy steps:
+1. Back up your current project folder and Railway database volume first.
+2. Copy the files above into the matching locations.
+3. Commit and push:
+   git add app.py database.py sponsorship_blueprint.py templates/admin_shows.html templates/placeholder_claim.html templates/admin_sponsors.html templates/sponsorship.html templates/admin_show_mode.html
+   git commit -m "Add show mode, cash registration, placeholder QR flow, sponsorship controls"
+   git push
+4. After Railway deploys, log into admin.
+5. Open /admin/show-mode during the event.
+6. Use /admin/export-snapshot.zip or Close Voting and Export when wrapping up.
+
+Notes:
+- The app runs init_db() on startup, so new compatible columns/tables are handled by the existing migration pattern.
+- If a route name in your live base.html navigation does not include Show Mode yet, you can still access it directly at /admin/show-mode.
+
+EXPORT UPGRADE v4 — 2026-05-04
+
+New export behavior:
+1. Manage Shows now has a Download Data ZIP button for every show, active or past.
+2. Manage Shows now has a Close + Export button for every show.
+3. Set Past now automatically saves a show export ZIP before returning to Manage Shows.
+4. Saved export ZIPs are stored on Railway at:
+   /data/exports
+5. The Manage Shows page displays the most recent saved export ZIPs with download links.
+
+New routes:
+- GET  /admin/shows/<show_id>/export.zip
+  Exports that show by ID. It does not require the show to be active.
+
+- POST /admin/shows/<show_id>/close-and-export
+  Closes voting, marks the show past, saves the export ZIP to /data/exports, and downloads it.
+
+- GET /admin/exports/<filename>
+  Downloads a ZIP that was already saved in /data/exports.
+
+Legacy routes kept:
+- /admin/export-snapshot.zip still exports the active show if one exists, but redirects to Manage Shows with a message if no show is active.
+- /admin/close-voting-and-export still works for the active show and now saves the ZIP permanently too.
+
+After deploying:
+1. Go to /admin/shows.
+2. For the old show, click Download Data ZIP to get the current data.
+3. Use Close + Export at the end of future shows.
+4. If you click Set Past, an export is automatically saved to Railway /data/exports.

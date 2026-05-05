@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% set title = "Show Mode • " ~ show['title'] %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6">
+  <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="text-xs font-semibold tracking-wide text-slate-500">SHOW-DAY STAFF PAGE</div>
+    <div class="mt-2 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h1 class="text-3xl font-semibold">{{ show['title'] }}</h1>
+        <p class="mt-1 text-slate-600">Quick tap page for placeholders, check-in, voting card lookup, and cash payment review.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <a class="btn btn-outline" href="{{ url_for('admin_page') }}">Back to Admin</a>
+        <a class="btn btn-outline" href="{{ url_for('admin_export_snapshot_zip') }}">Download Snapshot ZIP</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-4">
+    <div class="rounded-3xl bg-white border border-slate-200 p-5">
+      <div class="text-xs text-slate-500 font-semibold">TOTAL CARDS</div>
+      <div class="mt-1 text-3xl font-semibold">{{ cars|length }}</div>
+    </div>
+    <div class="rounded-3xl bg-white border border-slate-200 p-5">
+      <div class="text-xs text-slate-500 font-semibold">PLACEHOLDERS OPEN</div>
+      <div class="mt-1 text-3xl font-semibold">{{ cars|selectattr('is_placeholder', 'equalto', 1)|list|length }}</div>
+    </div>
+    <div class="rounded-3xl bg-white border border-slate-200 p-5">
+      <div class="text-xs text-slate-500 font-semibold">CASH NEEDS REVIEW</div>
+      <div class="mt-1 text-3xl font-semibold">{{ cars|selectattr('registration_payment_status', 'equalto', 'cash_pending')|list|length }}</div>
+    </div>
+    <div class="rounded-3xl bg-white border border-slate-200 p-5">
+      <div class="text-xs text-slate-500 font-semibold">CHECKED IN</div>
+      <div class="mt-1 text-3xl font-semibold">{{ cars|rejectattr('checked_in_at', 'equalto', none)|list|length }}</div>
+    </div>
+  </div>
+
+  <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h2 class="text-xl font-semibold">Cars / Windshield Cards</h2>
+        <p class="text-sm text-slate-600">For placeholders, use Claim. For claimed cars, use View Card or Check In.</p>
+      </div>
+    </div>
+
+    <div class="mt-5 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-left text-slate-500">
+            <th class="py-3 pr-4">#</th>
+            <th class="py-3 pr-4">Status</th>
+            <th class="py-3 pr-4">Owner</th>
+            <th class="py-3 pr-4">Vehicle</th>
+            <th class="py-3 pr-4">Payment</th>
+            <th class="py-3 pr-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for car in cars %}
+          <tr class="border-b border-slate-100 align-top">
+            <td class="py-3 pr-4 font-semibold">#{{ car['car_number'] }}</td>
+            <td class="py-3 pr-4">
+              {% if car['is_placeholder'] == 1 %}
+                <span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">Placeholder</span>
+              {% elif car['checked_in_at'] %}
+                <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Checked in</span>
+              {% else %}
+                <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">Claimed</span>
+              {% endif %}
+            </td>
+            <td class="py-3 pr-4">
+              <div class="font-medium text-slate-900">{{ car['owner_name'] or '—' }}</div>
+              <div class="text-xs text-slate-500">{{ car['owner_phone'] or '' }}</div>
+            </td>
+            <td class="py-3 pr-4">{{ car['year'] }} {{ car['make'] }} {{ car['model'] }}</td>
+            <td class="py-3 pr-4">
+              <div>{{ car['registration_payment_status'] or '—' }}</div>
+              {% if car['registration_amount_cents'] %}
+                <div class="text-xs text-slate-500">${{ '%.2f'|format((car['registration_amount_cents'] or 0) / 100) }}</div>
+              {% endif %}
+            </td>
+            <td class="py-3 pr-4">
+              <div class="flex flex-wrap gap-2">
+                {% if car['is_placeholder'] == 1 %}
+                  <a class="btn btn-outline" href="{{ url_for('placeholder_claim_page', show_slug=show['slug'], car_token=car['car_token']) }}" target="_blank">Claim</a>
+                {% else %}
+                  <a class="btn btn-outline" href="{{ url_for('car_card', slug=show['slug'], token=car['car_token']) }}" target="_blank">View Card</a>
+                  <a class="btn btn-outline" href="{{ url_for('checkin_page', show_slug=show['slug'], car_token=car['car_token']) }}" target="_blank">Check In</a>
+                {% endif %}
+
+                {% if car['registration_payment_status'] == 'cash_pending' %}
+                  <form method="POST" action="{{ url_for('admin_show_mode_mark_cash_paid', show_car_id=car['id']) }}">
+                    <button class="btn btn-primary" type="submit">Mark Cash Paid</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td class="py-6 text-slate-500" colspan="6">No cards found for this active show.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

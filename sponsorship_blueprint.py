@@ -1,6 +1,8 @@
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
+import os
+import sqlite3
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
@@ -42,6 +44,19 @@ def parse_dollars_to_cents(value: str, default_cents: int = 0) -> int:
         return max(0, int(round(float((value or "").strip()) * 100)))
     except Exception:
         return default_cents
+
+
+def _db_path() -> str:
+    return os.getenv("DB_PATH") or ("/data/app.db" if os.path.isdir("/data") else "app.db")
+
+
+def _conn_direct() -> sqlite3.Connection:
+    conn = sqlite3.connect(_db_path(), check_same_thread=False, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON;")
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
 
 
 def _logo_upload_dir() -> Path:
@@ -115,7 +130,7 @@ def admin_save_salesperson():
         name=request.form.get("name", "").strip(),
         default_commission_percent=float((request.form.get("default_commission_percent", "0") or "0").strip()),
         is_active=1 if request.form.get("is_active", "1") in {"1", "on"} else 0,
-        notes=request.form.get("notes", "").strip(),
+        notes=notes,
     )
     flash("Salesperson saved.", "ok")
     return redirect(url_for("sponsorship.admin_sponsors"))
@@ -144,6 +159,41 @@ def admin_save_catalog():
     return redirect(url_for("sponsorship.admin_sponsors"))
 
 
+
+
+@sponsorship_bp.post("/admin/catalog/hide-open")
+@require_admin_bp
+def admin_hide_open_sponsorships():
+    """Hide unsold public sponsorship packages when a show starts."""
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+    conn = _conn_direct()
+    try:
+        conn.execute(
+            """
+            UPDATE sponsorship_catalog
+            SET is_public = 0
+            WHERE show_id = ?
+              AND COALESCE(is_public, 1) = 1
+              AND COALESCE(is_active, 1) = 1
+              AND id NOT IN (
+                SELECT DISTINCT catalog_id
+                FROM sponsorship_sales
+                WHERE show_id = ?
+                  AND catalog_id IS NOT NULL
+                  AND COALESCE(status, '') NOT IN ('cancelled', 'rejected', 'void')
+              )
+            """,
+            (int(show["id"]), int(show["id"])),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    flash("Open unsold sponsorship packages are now hidden from the public page.", "ok")
+    return redirect(url_for("sponsorship.admin_sponsors"))
+
+
 @sponsorship_bp.post("/admin/sponsorship-sales/save")
 @require_admin_bp
 def admin_save_sponsorship_sale():
@@ -161,6 +211,11 @@ def admin_save_sponsorship_sale():
     salesperson = get_salesperson(salesperson_id) if salesperson_id else None
     commission_percent = float((salesperson or {}).get("default_commission_percent") or 0)
     logo_path = _save_logo(request.files.get("logo_file")) or request.form.get("existing_logo_path", "").strip()
+    discount_cents = parse_dollars_to_cents(request.form.get("discount_dollars", "0"), 0)
+    discount_reason = request.form.get("discount_reason", "").strip()
+    notes = request.form.get("notes", "").strip()
+    if discount_cents > 0:
+        notes = (notes + "\n" if notes else "") + f"Discount applied: ${discount_cents / 100:.2f}. Reason: {discount_reason}"
 
     save_sponsorship_sale(
         sale_id=sale_id,
@@ -184,7 +239,7 @@ def admin_save_sponsorship_sale():
         payment_method_type=request.form.get("payment_method_type", "manual").strip(),
         payment_status=request.form.get("payment_status", "pending").strip(),
         status=request.form.get("status", "open").strip(),
-        notes=request.form.get("notes", "").strip(),
+        notes=notes,
     )
 
     if request.form.get("attach_to_show") == "1" and request.form.get("payment_status", "").strip() in {"paid", "manual_paid"}:

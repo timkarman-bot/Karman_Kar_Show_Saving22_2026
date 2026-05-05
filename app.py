@@ -48,6 +48,7 @@ from database import (
     build_snapshot_zip_bytes,
     get_active_show,
     get_show_by_slug,
+    get_show_by_id,
     toggle_show_voting,
     set_show_voting_open,
     update_show_admin_settings,
@@ -769,6 +770,64 @@ def _finalize_placeholder_claim_paid(*, stripe_session_id: str, show_car_id: int
         conn.close()
 
 
+def _finalize_placeholder_claim_cash(*, intent_token: str, show_car_id: int) -> Dict[str, Any]:
+    """Finalize a placeholder card when registration is collected as cash/check at the show.
+    This keeps the QR code/card usable for voting and check-in while clearly marking payment as cash_pending.
+    """
+    conn = _conn_direct()
+    cur = conn.cursor()
+    try:
+        cur.execute("BEGIN IMMEDIATE")
+        ri = cur.execute("SELECT * FROM registration_intents WHERE intent_token = ? LIMIT 1", (intent_token,)).fetchone()
+        if not ri:
+            raise ValueError("Registration intent not found.")
+        if ri["finalized_show_car_id"]:
+            sc = cur.execute("SELECT * FROM show_cars WHERE id = ? LIMIT 1", (int(ri["finalized_show_car_id"]),)).fetchone()
+            conn.commit()
+            return {"show_car_id": int(ri["finalized_show_car_id"]), "car_token": sc["car_token"] if sc else None, "already_finalized": True}
+
+        sc = cur.execute("SELECT * FROM show_cars WHERE id = ? LIMIT 1", (show_car_id,)).fetchone()
+        if not sc:
+            raise ValueError("Placeholder car not found.")
+        if int(sc["is_placeholder"] or 0) != 1:
+            raise ValueError("This car number has already been assigned.")
+
+        person_id = int(sc["person_id"])
+        cur.execute(
+            """
+            UPDATE people
+            SET name = ?, phone = ?, email = ?, opt_in_future = ?, sponsor_opt_in = ?, consent_text = ?, consent_version = ?
+            WHERE id = ?
+            """,
+            (ri["owner_name"], ri["phone"], ri["email"], int(ri["opt_in_future"] or 0), int(ri["sponsor_opt_in"] or 0), CONSENT_TEXT_CAR_OWNER, CONSENT_VERSION, person_id),
+        )
+        cur.execute(
+            """
+            UPDATE show_cars
+            SET year = ?, make = ?, model = ?, insurance_carrier = ?,
+                registration_payment_status = 'cash_pending',
+                registration_amount_cents = ?, registration_session_id = ?,
+                waiver_signed_name = ?, waiver_signed_at = datetime('now'), waiver_version = ?,
+                waiver_text = ?, waiver_text_sha256 = ?, waiver_template_id = ?,
+                waiver_received = 1, waiver_received_at = datetime('now'), waiver_received_by = 'electronic',
+                is_placeholder = 0, registration_state = 'claimed / cash pending'
+            WHERE id = ?
+            """,
+            (ri["year"], ri["make"], ri["model"], ri["insurance_carrier"] if "insurance_carrier" in ri.keys() else "", int(ri["amount_cents"] or 0), f"cash_claim_{intent_token}", ri["waiver_signed_name"], ri["waiver_version"], ri["waiver_text"], ri["waiver_text_sha256"], ri["waiver_template_id"] if "waiver_template_id" in ri.keys() else None, show_car_id),
+        )
+        cur.execute(
+            "UPDATE registration_intents SET payment_status = 'cash_pending', finalized_show_car_id = ? WHERE id = ?",
+            (show_car_id, int(ri["id"])),
+        )
+        conn.commit()
+        return {"show_car_id": show_car_id, "car_token": sc["car_token"], "already_finalized": False}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def require_admin(view_func):
     @wraps(view_func)
     def wrapped(*args, **kwargs):
@@ -1113,6 +1172,32 @@ def register_submit():
         html_path=html_path,
     )
 
+    if registration_fee_cents > 0 and registration_payment_method == "cash":
+        synthetic_session_id = f"cash_reg_{intent_token}"
+        attach_stripe_session_to_registration_intent(
+            registration_intent_id,
+            synthetic_session_id,
+            stripe_payment_intent_id="cash_pending",
+        )
+        result = finalize_registration_intent_paid(synthetic_session_id)
+        conn = _conn_direct()
+        try:
+            conn.execute(
+                """
+                UPDATE show_cars
+                SET registration_payment_status = 'cash_pending', registration_state = 'claimed / cash pending'
+                WHERE id = ?
+                """,
+                (int(result["show_car_id"]),),
+            )
+            conn.execute("UPDATE registration_intents SET payment_status = 'cash_pending' WHERE id = ?", (registration_intent_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
+        _log_event("registration.cash_finalized", int(show["id"]), {"car_number": assigned_car_number, "registration_intent_id": registration_intent_id}, actor_type="public")
+        return render_template("register_success.html", show=show, car=car)
+
     if registration_fee_cents <= 0:
         synthetic_session_id = f"free_reg_{intent_token}"
         attach_stripe_session_to_registration_intent(
@@ -1252,14 +1337,13 @@ def placeholder_claim_page(show_slug: str, car_token: str):
     if not car:
         return "Car not found.", 404
 
-    if int(car["is_placeholder"] or 0) != 1:
-        return "This car number has already been assigned.", 400
-
-    if str(car["registration_state"] or "").lower() != "placeholder":
-        return "This car has already been claimed.", 400
+    # If the QR code is scanned after the placeholder has been claimed,
+    # keep the windshield card useful instead of showing an error.
+    if int(car["is_placeholder"] or 0) != 1 or str(car["registration_state"] or "").lower() != "placeholder":
+        return redirect(url_for("car_card", slug=show_slug, token=car_token))
 
     if str(car["registration_payment_status"] or "").lower() == "paid":
-        return "This car is already registered.", 400
+        return redirect(url_for("car_card", slug=show_slug, token=car_token))
 
     return render_template("placeholder_claim.html", show=show, car=car)
 
@@ -1293,6 +1377,9 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
     insurance_carrier = request.form.get("insurance_carrier", "").strip()
     waiver_accepted = request.form.get("waiver_accepted", "") == "on"
     waiver_signed_name = request.form.get("waiver_signed_name", "").strip()
+    registration_payment_method = request.form.get("registration_payment_method", "card").strip().lower()
+    if registration_payment_method not in {"card", "cash"}:
+        registration_payment_method = "card"
 
     if not (owner_name and year and make and model and waiver_signed_name):
         return render_template("placeholder_claim.html", show=show, car=car, error="Please fill out all required fields.")
@@ -1407,6 +1494,12 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
         intent_token=intent_token,
         html_path=html_path,
     )
+
+    if registration_fee_cents > 0 and registration_payment_method == "cash":
+        result = _finalize_placeholder_claim_cash(intent_token=intent_token, show_car_id=int(car["id"]))
+        final_car = get_show_car_public_by_token(int(show["id"]), result["car_token"])
+        _log_event("placeholder_claim.cash_finalized", int(show["id"]), {"car_number": assigned_car_number, "registration_intent_id": registration_intent_id}, actor_type="public")
+        return render_template("placeholder_claim_success.html", show=show, car=final_car)
 
     if registration_fee_cents <= 0:
         synthetic_session_id = f"free_claim_{intent_token}"
@@ -1585,10 +1678,9 @@ def attendee_submit(show_slug: str):
     sponsor_opt_in = request.form.get("sponsor_opt_in", "") == "on"
     updates_opt_in = request.form.get("updates_opt_in", "") == "on"
 
-    if not (first_name and last_name):
-        return render_template("attendee.html", show=show, error="First and last name are required.")
-    if (sponsor_opt_in or updates_opt_in) and not phone:
-        return render_template("attendee.html", show=show, error="Phone number is required if you choose to receive updates or sponsor information.")
+    if not first_name:
+        first_name = "Guest"
+    # Phone and email are encouraged, but attendance should still be counted when guests skip contact details.
 
     attendee_id = create_attendee(
         int(show["id"]),
@@ -1971,8 +2063,16 @@ def sponsorship_public_submit():
         return redirect(url_for("sponsorship.public_sponsorship_page", show_slug=show_slug))
 
     payment_method_choice = request.form.get("payment_method_choice", "card").strip().lower()
-    if payment_method_choice not in {"card", "check", "invoice"}:
+    if payment_method_choice not in {"card", "check", "invoice", "cash"}:
         payment_method_choice = "card"
+
+    base_price_cents = int(catalog["price_cents"] or 0)
+    discount_cents = _parse_dollars_to_cents(request.form.get("discount_dollars", "0"), 0)
+    discount_reason = request.form.get("discount_reason", "").strip()
+    final_price_cents = max(0, base_price_cents - discount_cents)
+    sponsor_notes = request.form.get("notes", "").strip()
+    if discount_cents > 0:
+        sponsor_notes = (sponsor_notes + "\n" if sponsor_notes else "") + f"Discount applied: ${discount_cents / 100:.2f}. Reason: {discount_reason}"
 
     salesperson_id_raw = request.form.get("salesperson_id", "").strip()
     salesperson_id = int(salesperson_id_raw) if salesperson_id_raw.isdigit() else None
@@ -2002,9 +2102,13 @@ def sponsorship_public_submit():
         payment_method_type="checkout" if payment_method_choice == "card" else payment_method_choice,
         payment_status="pending" if payment_method_choice != "invoice" else "invoice_requested",
         status="open" if payment_method_choice != "invoice" else "invoice_requested",
-        notes=request.form.get("notes", "").strip(),
+        notes=sponsor_notes,
     )
 #######
+    if payment_method_choice == "card" and final_price_cents <= 0:
+        flash("Thank you. Your sponsorship has been recorded with the approved discount.", "ok")
+        return redirect(url_for("sponsorship.public_sponsorship_page", show_slug=show_slug))
+
     if payment_method_choice == "card":
         _require_platform_stripe()
 
@@ -2017,7 +2121,7 @@ def sponsorship_public_submit():
             line_items=[{
                 "price_data": {
                     "currency": "usd",
-                    "unit_amount": int(catalog["price_cents"] or 0),
+                    "unit_amount": final_price_cents,
                     "product_data": {
                         "name": f"Sponsorship – {catalog['package_name']} ({show['title']})"
                     },
@@ -2059,7 +2163,7 @@ def sponsorship_public_submit():
             payment_status="pending",
             status="open",
             stripe_checkout_session_id=session_obj.id,
-            notes=request.form.get("notes", "").strip(),
+            notes=sponsor_notes,
         )
 
         return redirect(session_obj.url)
@@ -2078,7 +2182,7 @@ def sponsorship_public_submit():
         f"ZIP: {request.form.get('mailing_zip', '').strip()}\n"
         f"Website: {request.form.get('website_url', '').strip()}\n"
         f"Package: {catalog['package_name']}\n"
-        f"Amount: ${float(int(catalog['price_cents'] or 0) / 100):.2f}\n"
+        f"Amount: ${float(final_price_cents / 100):.2f}\n"
         f"Salesperson: {((salesperson or {}).get('name') or '').strip()}\n"
         f"Logo later: {'Yes' if request.form.get('logo_pending') in {'1', 'on'} else 'No'}\n"
         f"Notes: {request.form.get('notes', '').strip()}\n"
@@ -2377,6 +2481,7 @@ def admin_shows():
         shows=list_shows_admin(),
         show=get_active_show(),
         waiver_templates=list_waiver_templates(),
+        saved_exports=_list_saved_exports(),
     )
 
 
@@ -2575,8 +2680,13 @@ def admin_shows_set_upcoming(show_id: int):
 @require_admin
 def admin_shows_set_past(show_id: int):
     set_past_show(show_id)
-    _log_event("admin.show_set_past", show_id, actor_type="admin")
-    flash("Show moved to past.", "ok")
+    try:
+        _, filename, save_path = _save_snapshot_zip_for_show(show_id)
+        _log_event("admin.show_set_past", show_id, {"auto_export_filename": filename, "saved_path": save_path}, actor_type="admin")
+        flash(f"Show moved to past and export saved: {filename}", "ok")
+    except Exception as e:
+        _log_event("admin.show_set_past_export_failed", show_id, {"error": str(e)}, actor_type="admin")
+        flash(f"Show moved to past, but automatic export failed: {e}", "error")
     return redirect(url_for("admin_shows"))
 
 
@@ -2762,26 +2872,157 @@ def admin_print_cards_pdf():
         download_name=f"{show['slug']}-voting-cards-landscape.pdf",
     )
 
-@app.get("/admin/export-snapshot.zip")
+
+
+@app.get("/admin/show-mode")
 @require_admin
-def admin_export_snapshot_zip():
+def admin_show_mode():
+    """Fast staff dashboard for show-day check-in, placeholder claiming, and cash payment review."""
     show = get_active_show()
     if not show:
         return "No active show.", 500
-    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
-    _log_event("admin.snapshot_exported", int(show["id"]), {"filename": filename}, actor_type="admin")
+    conn = _conn_direct()
+    try:
+        rows = conn.execute(
+            """
+            SELECT sc.*, p.name AS owner_name, p.phone AS owner_phone, p.email AS owner_email
+            FROM show_cars sc
+            JOIN people p ON p.id = sc.person_id
+            WHERE sc.show_id = ?
+            ORDER BY sc.car_number ASC
+            """,
+            (int(show["id"]),),
+        ).fetchall()
+    finally:
+        conn.close()
+    return render_template("admin_show_mode.html", show=show, cars=rows)
+
+
+@app.post("/admin/show-mode/mark-cash-paid/<int:show_car_id>")
+@require_admin
+def admin_show_mode_mark_cash_paid(show_car_id: int):
+    show = get_active_show()
+    if not show:
+        return "No active show.", 500
+    conn = _conn_direct()
+    try:
+        conn.execute(
+            """
+            UPDATE show_cars
+            SET registration_payment_status = 'paid_cash',
+                registration_state = CASE
+                    WHEN COALESCE(checked_in_at, '') != '' THEN 'checked-in'
+                    ELSE 'claimed'
+                END
+            WHERE id = ? AND show_id = ?
+            """,
+            (int(show_car_id), int(show["id"])),
+        )
+        conn.execute(
+            """
+            UPDATE registration_intents
+            SET payment_status = 'paid_cash', paid_at = COALESCE(paid_at, datetime('now'))
+            WHERE finalized_show_car_id = ? AND show_id = ?
+            """,
+            (int(show_car_id), int(show["id"])),
+        )
+        conn.commit()
+        _log_event("admin.cash_payment_marked_paid", int(show["id"]), {"show_car_id": int(show_car_id)}, actor_type="admin")
+    finally:
+        conn.close()
+    flash("Cash payment marked paid.", "ok")
+    return redirect(url_for("admin_show_mode"))
+
+
+def _exports_dir() -> Path:
+    p = Path("/data/exports") if os.path.isdir("/data") else Path(app.instance_path) / "exports"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _save_snapshot_zip_for_show(show_id: int) -> tuple[bytes, str, str]:
+    zip_bytes, filename = build_snapshot_zip_bytes(int(show_id))
+    save_path = _exports_dir() / filename
+    save_path.write_bytes(zip_bytes)
+    return zip_bytes, filename, str(save_path)
+
+
+def _list_saved_exports() -> list[dict]:
+    export_dir = _exports_dir()
+    rows = []
+    for p in sorted(export_dir.glob("*.zip"), key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            rows.append({
+                "filename": p.name,
+                "size_bytes": p.stat().st_size,
+                "modified_at": datetime.fromtimestamp(p.stat().st_mtime, ZoneInfo("America/Chicago")).strftime("%Y-%m-%d %I:%M %p"),
+            })
+        except Exception:
+            pass
+    return rows
+
+
+@app.get("/admin/export-snapshot.zip")
+@require_admin
+def admin_export_snapshot_zip():
+    """Legacy active-show export route. Kept for old bookmarks."""
+    show = get_active_show()
+    if not show:
+        flash("No active show. Use Manage Shows → Download Data for any past show.", "error")
+        return redirect(url_for("admin_shows"))
+    zip_bytes, filename, save_path = _save_snapshot_zip_for_show(int(show["id"]))
+    _log_event("admin.snapshot_exported", int(show["id"]), {"filename": filename, "saved_path": save_path}, actor_type="admin")
+    return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+
+
+@app.get("/admin/shows/<int:show_id>/export.zip")
+@require_admin
+def admin_export_show_zip(show_id: int):
+    show = get_show_by_id(show_id)
+    if not show:
+        return "Show not found.", 404
+    zip_bytes, filename, save_path = _save_snapshot_zip_for_show(show_id)
+    _log_event("admin.show_snapshot_exported", show_id, {"filename": filename, "saved_path": save_path}, actor_type="admin")
+    return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
+
+
+@app.get("/admin/exports/<path:filename>")
+@require_admin
+def admin_download_saved_export(filename: str):
+    safe_name = secure_filename(filename)
+    if safe_name != filename or not safe_name.endswith(".zip"):
+        return "Invalid export filename.", 400
+    export_path = _exports_dir() / safe_name
+    if not export_path.exists():
+        return "Export not found.", 404
+    return send_file(export_path, mimetype="application/zip", as_attachment=True, download_name=safe_name)
+
+
+@app.post("/admin/shows/<int:show_id>/close-and-export")
+@require_admin
+def admin_show_close_and_export(show_id: int):
+    show = get_show_by_id(show_id)
+    if not show:
+        return "Show not found.", 404
+    set_show_voting_open(show_id, False)
+    set_past_show(show_id)
+    zip_bytes, filename, save_path = _save_snapshot_zip_for_show(show_id)
+    _log_event("admin.show_closed_and_exported", show_id, {"filename": filename, "saved_path": save_path}, actor_type="admin")
+    flash(f"Show closed and export saved: {filename}", "ok")
     return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
 
 
 @app.post("/admin/close-voting-and-export")
 @require_admin
 def admin_close_voting_and_export():
+    """Legacy active-show close/export route. Saves the ZIP permanently too."""
     show = get_active_show()
     if not show:
-        return "No active show.", 500
+        flash("No active show. Use Manage Shows → Close + Export for any show.", "error")
+        return redirect(url_for("admin_shows"))
     set_show_voting_open(int(show["id"]), False)
-    zip_bytes, filename = build_snapshot_zip_bytes(int(show["id"]))
-    _log_event("admin.voting_closed_and_exported", int(show["id"]), {"filename": filename}, actor_type="admin")
+    zip_bytes, filename, save_path = _save_snapshot_zip_for_show(int(show["id"]))
+    _log_event("admin.voting_closed_and_exported", int(show["id"]), {"filename": filename, "saved_path": save_path}, actor_type="admin")
     return send_file(io.BytesIO(zip_bytes), mimetype="application/zip", as_attachment=True, download_name=filename)
 
 

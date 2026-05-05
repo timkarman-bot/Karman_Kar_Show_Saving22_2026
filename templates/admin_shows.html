@@ -11,6 +11,43 @@
     </p>
   </div>
 
+
+  {% if saved_exports %}
+  <section class="rounded-3xl border border-emerald-200 bg-emerald-50 p-6">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <div class="text-xs font-semibold tracking-wide text-emerald-700">SAVED EXPORTS</div>
+        <h2 class="mt-1 text-2xl font-semibold text-slate-900">Show Data Backups Saved on Railway</h2>
+        <p class="mt-1 text-sm text-emerald-900">These ZIP files are saved on the Railway volume at /data/exports and can be downloaded anytime.</p>
+      </div>
+    </div>
+    <div class="mt-5 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="text-left text-slate-600 border-b border-emerald-200">
+            <th class="py-2 pr-4">File</th>
+            <th class="py-2 pr-4">Saved</th>
+            <th class="py-2 pr-4">Size</th>
+            <th class="py-2 pr-4">Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for export in saved_exports[:10] %}
+          <tr class="border-b border-emerald-100">
+            <td class="py-3 pr-4 font-medium text-slate-900">{{ export.filename }}</td>
+            <td class="py-3 pr-4 whitespace-nowrap">{{ export.modified_at }}</td>
+            <td class="py-3 pr-4">{{ '%.1f'|format((export.size_bytes or 0) / 1024) }} KB</td>
+            <td class="py-3 pr-4">
+              <a class="btn btn-outline" href="{{ url_for('admin_download_saved_export', filename=export.filename) }}">Download ZIP</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
   {% if pending_vote_reviews %}
   <section class="rounded-3xl border border-amber-200 bg-amber-50 p-6">
     <div class="flex items-center justify-between gap-4">
@@ -321,7 +358,11 @@
           <button type="submit" class="btn btn-outline">Set Upcoming</button>
         </form>
         <form method="POST" action="{{ url_for('admin_shows_set_past', show_id=s['id']) }}">
-          <button type="submit" class="btn btn-outline">Set Past</button>
+          <button type="submit" class="btn btn-outline">Set Past + Auto Save Export</button>
+        </form>
+        <a class="btn btn-outline" href="{{ url_for('admin_export_show_zip', show_id=s['id']) }}">Download Data ZIP</a>
+        <form method="POST" action="{{ url_for('admin_show_close_and_export', show_id=s['id']) }}">
+          <button type="submit" class="btn btn-primary">Close + Export</button>
         </form>
       </div>
     </div>
