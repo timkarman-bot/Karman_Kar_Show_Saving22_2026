@@ -111,6 +111,11 @@ from database import (
     finalize_external_vote_intent,
     list_pending_vote_reviews,
     reject_external_vote_intent,
+    list_registration_slots,
+    save_registration_slots_for_show,
+    get_registration_slot,
+    show_has_registration_slots,
+    show_slot_has_capacity,
 )
 
 
@@ -256,6 +261,41 @@ def _parse_dollars_to_cents(value: str, default_cents: int = 0) -> int:
         return max(0, int(round(float((value or "").strip()) * 100)))
     except Exception:
         return default_cents
+
+def _slot_payloads_from_request() -> list[dict[str, Any]]:
+    """Parse up to five registration day/session slots from the admin show form."""
+    payloads: list[dict[str, Any]] = []
+    for idx in range(1, 6):
+        label = request.form.get(f"slot_{idx}_label", "").strip()
+        slot_id = request.form.get(f"slot_{idx}_id", "").strip()
+        if not label and not slot_id:
+            continue
+        payloads.append({
+            "id": slot_id,
+            "slot_label": label,
+            "slot_date": request.form.get(f"slot_{idx}_date", "").strip(),
+            "start_time": request.form.get(f"slot_{idx}_start_time", "").strip(),
+            "end_time": request.form.get(f"slot_{idx}_end_time", "").strip(),
+            "capacity": request.form.get(f"slot_{idx}_capacity", "0").strip(),
+            "sort_order": request.form.get(f"slot_{idx}_sort_order", str(idx * 10)).strip(),
+            "is_active": "on" if request.form.get(f"slot_{idx}_is_active") == "on" else "0",
+        })
+    return payloads
+
+
+def _registration_slots_for_public(show_id: int):
+    return list_registration_slots(show_id, public_only=True)
+
+
+def _selected_registration_slot_id(show_id: int) -> Optional[int]:
+    raw = request.form.get("registration_slot_id", "").strip()
+    if not raw:
+        return None
+    if not raw.isdigit():
+        return None
+    slot_id = int(raw)
+    slot = get_registration_slot(show_id, slot_id)
+    return slot_id if slot else None
 
 
 def _show_payment_mode(show: Any) -> str:
@@ -1073,7 +1113,7 @@ def register_page():
         return "No active show configured.", 500
     if not prereg_allowed(show):
         return render_template("registration_closed.html", show=show), 403
-    return render_template("register.html", show=show)
+    return render_template("register.html", show=show, registration_slots=_registration_slots_for_public(int(show["id"])))
     
 @app.post("/register")
 @rate_limit("register", 20, 300)
@@ -1083,8 +1123,16 @@ def register_submit():
         return "No active show configured.", 500
     if not prereg_allowed(show):
         return render_template("registration_closed.html", show=show), 403
-    if not show_has_capacity(int(show["id"])):
-        return render_template("register.html", show=show, error="This show has reached its maximum number of cars.")
+
+    registration_slots = _registration_slots_for_public(int(show["id"]))
+    registration_slot_id = _selected_registration_slot_id(int(show["id"]))
+    if registration_slots:
+        if not registration_slot_id:
+            return render_template("register.html", show=show, registration_slots=registration_slots, error="Please select which day/session you are registering for.")
+        if not show_slot_has_capacity(int(show["id"]), registration_slot_id):
+            return render_template("register.html", show=show, registration_slots=registration_slots, error="That day/session is full.")
+    elif not show_has_capacity(int(show["id"])):
+        return render_template("register.html", show=show, registration_slots=registration_slots, error="This show has reached its maximum number of cars.")
 
     name = request.form.get("name", "").strip()
     phone = request.form.get("phone", "").strip()
@@ -1097,14 +1145,16 @@ def register_submit():
     insurance_carrier = request.form.get("insurance_carrier", "").strip()
     waiver_accepted = request.form.get("waiver_accepted", "") == "on"
     waiver_signed_name = request.form.get("waiver_signed_name", "").strip()
-    
+    registration_payment_method = request.form.get("registration_payment_method", "card").strip().lower()
+    if registration_payment_method not in {"card", "cash"}:
+        registration_payment_method = "card"
 
     if not (name and year and make and model and waiver_signed_name):
-        return render_template("register.html", show=show, error="Please fill out all required fields.")
+        return render_template("register.html", show=show, registration_slots=registration_slots, error="Please fill out all required fields.")
     if (opt_in_future or sponsor_opt_in) and not phone:
-        return render_template("register.html", show=show, error="Phone number is required if you opt in to updates or sponsor information.")
+        return render_template("register.html", show=show, registration_slots=registration_slots, error="Phone number is required if you opt in to updates or sponsor information.")
     if not waiver_accepted:
-        return render_template("register.html", show=show, error="You must accept the waiver to continue.")
+        return render_template("register.html", show=show, registration_slots=registration_slots, error="You must accept the waiver to continue.")
 
     registration_fee_cents = int(show["registration_fee_cents"] or 0)
     waiver_text = (show.get("waiver_text") or "").strip()
@@ -1129,9 +1179,10 @@ def register_submit():
             waiver_version=waiver_version,
             amount_cents=registration_fee_cents,
             waiver_template_id=waiver_template_id,
+            registration_slot_id=registration_slot_id,
         )
     except ValueError as e:
-        return render_template("register.html", show=show, error=str(e))
+        return render_template("register.html", show=show, registration_slots=registration_slots, error=str(e))
 
     html_path = _save_waiver_capture_html(
         show=show,
@@ -1345,7 +1396,7 @@ def placeholder_claim_page(show_slug: str, car_token: str):
     if str(car["registration_payment_status"] or "").lower() == "paid":
         return redirect(url_for("car_card", slug=show_slug, token=car_token))
 
-    return render_template("placeholder_claim.html", show=show, car=car)
+    return render_template("placeholder_claim.html", show=show, car=car, registration_slots=_registration_slots_for_public(int(show["id"])))
 
 
 @app.post("/claim/<show_slug>/<car_token>")
@@ -1365,6 +1416,14 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
 
     if str(car["registration_payment_status"] or "").lower() == "paid":
         return "This car is already registered.", 400
+
+    registration_slots = _registration_slots_for_public(int(show["id"]))
+    registration_slot_id = _selected_registration_slot_id(int(show["id"]))
+    if registration_slots:
+        if not registration_slot_id:
+            return render_template("placeholder_claim.html", show=show, car=car, registration_slots=registration_slots, error="Please select which day/session you are registering for.")
+        if not show_slot_has_capacity(int(show["id"]), registration_slot_id):
+            return render_template("placeholder_claim.html", show=show, car=car, registration_slots=registration_slots, error="That day/session is full.")
     
     owner_name = request.form.get("name", "").strip()
     phone = request.form.get("phone", "").strip()
@@ -1382,11 +1441,11 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
         registration_payment_method = "card"
 
     if not (owner_name and year and make and model and waiver_signed_name):
-        return render_template("placeholder_claim.html", show=show, car=car, error="Please fill out all required fields.")
+        return render_template("placeholder_claim.html", show=show, car=car, registration_slots=registration_slots, error="Please fill out all required fields.")
     if (opt_in_future or sponsor_opt_in) and not phone:
-        return render_template("placeholder_claim.html", show=show, car=car, error="Phone number is required if you opt in to updates or sponsor information.")
+        return render_template("placeholder_claim.html", show=show, car=car, registration_slots=registration_slots, error="Phone number is required if you opt in to updates or sponsor information.")
     if not waiver_accepted:
-        return render_template("placeholder_claim.html", show=show, car=car, error="You must accept the waiver to continue.")
+        return render_template("placeholder_claim.html", show=show, car=car, registration_slots=registration_slots, error="You must accept the waiver to continue.")
 
     car_number = int(car["car_number"])
     registration_fee_cents = int(show["registration_fee_cents"] or 0)
@@ -1413,6 +1472,7 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
             amount_cents=registration_fee_cents,
             waiver_template_id=waiver_template_id,
             reserved_car_number=car_number,
+            registration_slot_id=registration_slot_id,
         )
     except ValueError:
         conn = _conn_direct()
@@ -1423,14 +1483,15 @@ def placeholder_claim_submit(show_slug: str, car_token: str):
             cur.execute(
                 """
                 INSERT INTO registration_intents (
-                    show_id, intent_token, owner_name, phone, email, opt_in_future, sponsor_opt_in,
+                    show_id, registration_slot_id, intent_token, owner_name, phone, email, opt_in_future, sponsor_opt_in,
                     car_number, year, make, model, insurance_carrier,
                     waiver_accepted, waiver_signed_name, waiver_text, waiver_version, waiver_text_sha256,
                     waiver_template_id, amount_cents, payment_status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
                 """,
                 (
                     int(show["id"]),
+                    int(registration_slot_id) if registration_slot_id else None,
                     intent_token,
                     owner_name,
                     phone,
@@ -2476,12 +2537,15 @@ def admin_show_settings():
 @app.get("/admin/shows")
 @require_admin
 def admin_shows():
+    shows = list_shows_admin()
+    slots_by_show = {int(s["id"]): list_registration_slots(int(s["id"]), public_only=False) for s in shows}
     return render_template(
         "admin_shows.html",
-        shows=list_shows_admin(),
+        shows=shows,
         show=get_active_show(),
         waiver_templates=list_waiver_templates(),
         saved_exports=_list_saved_exports(),
+        slots_by_show=slots_by_show,
     )
 
 
@@ -2527,7 +2591,7 @@ def admin_shows_create():
             flash(str(e), "error")
             return redirect(url_for("admin_shows"))
 
-    create_show_admin(
+    new_show_id = create_show_admin(
         slug=slug,
         flyer_image_path=flyer_image_path,
         title=title,
@@ -2569,6 +2633,7 @@ def admin_shows_create():
         preset_vote_options=preset_vote_options,
         max_votes_per_checkout=max_votes_per_checkout,
     )
+    save_registration_slots_for_show(new_show_id, _slot_payloads_from_request())
 
     flash("Show created.", "ok")
     return redirect(url_for("admin_shows"))
@@ -2653,6 +2718,7 @@ def admin_shows_update(show_id: int):
         preset_vote_options=preset_vote_options,
         max_votes_per_checkout=max_votes_per_checkout,
     )
+    save_registration_slots_for_show(show_id, _slot_payloads_from_request())
 
     flash("Show updated.", "ok")
     return redirect(url_for("admin_shows"))

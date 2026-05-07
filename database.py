@@ -213,6 +213,7 @@ def init_db() -> None:
     )
 
     for sql in [
+        "ALTER TABLE show_cars ADD COLUMN registration_slot_id INTEGER",
         "ALTER TABLE show_cars ADD COLUMN waiver_received INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE show_cars ADD COLUMN waiver_received_at TEXT",
         "ALTER TABLE show_cars ADD COLUMN waiver_received_by TEXT",
@@ -269,6 +270,7 @@ def init_db() -> None:
     )
 
     for sql in [
+        "ALTER TABLE registration_intents ADD COLUMN registration_slot_id INTEGER",
         "ALTER TABLE registration_intents ADD COLUMN waiver_text_sha256 TEXT",
         "ALTER TABLE registration_intents ADD COLUMN waiver_template_id INTEGER",
         "ALTER TABLE registration_intents ADD COLUMN insurance_carrier TEXT",
@@ -277,6 +279,32 @@ def init_db() -> None:
             cur.execute(sql)
         except sqlite3.OperationalError:
             pass
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS show_registration_slots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            show_id INTEGER NOT NULL,
+            slot_label TEXT NOT NULL,
+            slot_date TEXT,
+            start_time TEXT,
+            end_time TEXT,
+            capacity INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(show_id) REFERENCES shows(id)
+        )
+        """
+    )
+
+    for sql in [
+        "CREATE INDEX IF NOT EXISTS idx_show_registration_slots_show_id ON show_registration_slots(show_id)",
+        "CREATE INDEX IF NOT EXISTS idx_show_cars_registration_slot ON show_cars(show_id, registration_slot_id)",
+        "CREATE INDEX IF NOT EXISTS idx_registration_intents_slot ON registration_intents(show_id, registration_slot_id)",
+    ]:
+        cur.execute(sql)
 
     cur.execute(
         """
@@ -1009,6 +1037,173 @@ def show_has_capacity(show_id: int) -> bool:
         return True
     return count_registered_cars(show_id) < max_cars
 
+# REGISTRATION SLOTS / MULTI-DAY CAPACITY
+
+def _row_has_column(row: Any, column: str) -> bool:
+    try:
+        return column in row.keys()
+    except Exception:
+        return False
+
+
+def count_registered_cars_for_slot(show_id: int, registration_slot_id: Optional[int]) -> int:
+    if not registration_slot_id:
+        return 0
+    conn = _conn()
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM show_cars
+        WHERE show_id = ?
+          AND registration_slot_id = ?
+          AND COALESCE(is_placeholder, 0) = 0
+        """,
+        (show_id, int(registration_slot_id)),
+    ).fetchone()
+    conn.close()
+    return int(row["cnt"] or 0)
+
+
+def show_has_registration_slots(show_id: int) -> bool:
+    conn = _conn()
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM show_registration_slots
+        WHERE show_id = ? AND COALESCE(is_active, 1) = 1
+        """,
+        (show_id,),
+    ).fetchone()
+    conn.close()
+    return int(row["cnt"] or 0) > 0
+
+
+def get_registration_slot(show_id: int, registration_slot_id: int) -> Optional[sqlite3.Row]:
+    conn = _conn()
+    row = conn.execute(
+        """
+        SELECT *
+        FROM show_registration_slots
+        WHERE show_id = ? AND id = ?
+        LIMIT 1
+        """,
+        (show_id, int(registration_slot_id)),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def list_registration_slots(show_id: int, public_only: bool = False) -> List[sqlite3.Row]:
+    conn = _conn()
+    where = "WHERE s.show_id = ?"
+    params: List[Any] = [show_id]
+    if public_only:
+        where += " AND COALESCE(s.is_active, 1) = 1"
+    rows = conn.execute(
+        f"""
+        SELECT
+            s.*,
+            COALESCE(COUNT(sc.id), 0) AS registered_count,
+            CASE
+                WHEN COALESCE(s.capacity, 0) <= 0 THEN NULL
+                ELSE MAX(COALESCE(s.capacity, 0) - COALESCE(COUNT(sc.id), 0), 0)
+            END AS remaining_count,
+            CASE
+                WHEN COALESCE(s.capacity, 0) > 0 AND COALESCE(COUNT(sc.id), 0) >= COALESCE(s.capacity, 0) THEN 1
+                ELSE 0
+            END AS is_full
+        FROM show_registration_slots s
+        LEFT JOIN show_cars sc
+            ON sc.show_id = s.show_id
+           AND sc.registration_slot_id = s.id
+           AND COALESCE(sc.is_placeholder, 0) = 0
+        {where}
+        GROUP BY s.id
+        ORDER BY s.sort_order ASC, s.id ASC
+        """,
+        params,
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def show_slot_has_capacity(show_id: int, registration_slot_id: Optional[int]) -> bool:
+    if not registration_slot_id:
+        return not show_has_registration_slots(show_id) and show_has_capacity(show_id)
+    slot = get_registration_slot(show_id, int(registration_slot_id))
+    if not slot or int(slot["is_active"] or 0) != 1:
+        return False
+    try:
+        capacity = int(slot["capacity"] or 0)
+    except Exception:
+        capacity = 0
+    if capacity <= 0:
+        return True
+    return count_registered_cars_for_slot(show_id, int(registration_slot_id)) < capacity
+
+
+def save_registration_slots_for_show(show_id: int, slot_payloads: List[Dict[str, Any]]) -> None:
+    """Upsert registration day/session slots for a show. Blank labels are ignored."""
+    conn = _conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("BEGIN IMMEDIATE")
+        seen_ids = set()
+        for idx, payload in enumerate(slot_payloads):
+            label = (payload.get("slot_label") or "").strip()
+            if not label:
+                continue
+            raw_id = str(payload.get("id") or "").strip()
+            slot_id = int(raw_id) if raw_id.isdigit() else None
+            try:
+                capacity = int(payload.get("capacity") or 0)
+            except Exception:
+                capacity = 0
+            if capacity < 0:
+                capacity = 0
+            try:
+                sort_order = int(payload.get("sort_order") or ((idx + 1) * 10))
+            except Exception:
+                sort_order = (idx + 1) * 10
+            is_active = 1 if str(payload.get("is_active") or "").lower() in {"1", "true", "yes", "on"} else 0
+            values = (
+                label,
+                (payload.get("slot_date") or "").strip(),
+                (payload.get("start_time") or "").strip(),
+                (payload.get("end_time") or "").strip(),
+                capacity,
+                sort_order,
+                is_active,
+                show_id,
+            )
+            if slot_id:
+                cur.execute(
+                    """
+                    UPDATE show_registration_slots
+                    SET slot_label = ?, slot_date = ?, start_time = ?, end_time = ?, capacity = ?,
+                        sort_order = ?, is_active = ?, updated_at = datetime('now')
+                    WHERE show_id = ? AND id = ?
+                    """,
+                    values + (slot_id,),
+                )
+                seen_ids.add(slot_id)
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO show_registration_slots
+                        (slot_label, slot_date, start_time, end_time, capacity, sort_order, is_active, show_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                    values,
+                )
+                seen_ids.add(int(cur.lastrowid))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
 
 def set_show_voting_open(show_id: int, voting_open: bool) -> None:
     conn = _conn()
@@ -1395,6 +1590,8 @@ def search_show_cars_admin(show_id: int, query: str) -> List[sqlite3.Row]:
             sc.is_placeholder,
             sc.registration_state,
             sc.checked_in_at,
+            sc.registration_slot_id,
+            slot.slot_label,
             p.name AS owner_name,
             p.phone AS owner_phone,
             p.email AS owner_email,
@@ -1402,6 +1599,7 @@ def search_show_cars_admin(show_id: int, query: str) -> List[sqlite3.Row]:
             p.sponsor_opt_in
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
+        LEFT JOIN show_registration_slots slot ON slot.id = sc.registration_slot_id
     """
 
     if not q:
@@ -1483,9 +1681,15 @@ def list_show_cars_public(show_id: int) -> List[sqlite3.Row]:
             sc.is_placeholder,
             sc.registration_state,
             sc.checked_in_at,
+            sc.registration_slot_id,
+            slot.slot_label,
+            slot.slot_date,
+            slot.start_time as slot_start_time,
+            slot.end_time as slot_end_time,
             p.name as owner_name
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
+        LEFT JOIN show_registration_slots slot ON slot.id = sc.registration_slot_id
         WHERE sc.show_id = ?
         ORDER BY sc.car_number ASC
         """,
@@ -1515,6 +1719,7 @@ def create_registration_intent(
     waiver_accepted: bool = False,
     waiver_template_id: Optional[int] = None,
     reserved_car_number: Optional[int] = None,
+    registration_slot_id: Optional[int] = None,
 ) -> Tuple[int, str, int]:
     conn = _conn()
     cur = conn.cursor()
@@ -1522,7 +1727,12 @@ def create_registration_intent(
     try:
         cur.execute("BEGIN IMMEDIATE")
 
-        if not show_has_capacity(show_id):
+        if show_has_registration_slots(show_id):
+            if not registration_slot_id:
+                raise ValueError("Please select which day/session you are registering for.")
+            if not show_slot_has_capacity(show_id, registration_slot_id):
+                raise ValueError("That day/session has reached its maximum number of cars.")
+        elif not show_has_capacity(show_id):
             raise ValueError("This show has reached its maximum number of cars.")
 
         if reserved_car_number is not None:
@@ -1578,15 +1788,16 @@ def create_registration_intent(
         cur.execute(
             """
             INSERT INTO registration_intents (
-                show_id, intent_token, owner_name, phone, email, opt_in_future, sponsor_opt_in,
+                show_id, registration_slot_id, intent_token, owner_name, phone, email, opt_in_future, sponsor_opt_in,
                 car_number, year, make, model, insurance_carrier,
                 waiver_accepted, waiver_signed_name, waiver_text, waiver_version, waiver_text_sha256,
                 waiver_template_id, amount_cents, payment_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
             """,
             (
                 show_id,
+                int(registration_slot_id) if registration_slot_id else None,
                 token,
                 owner_name,
                 phone,
@@ -1679,7 +1890,13 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
             }
 
         show_id = int(ri["show_id"])
-        if not show_has_capacity(show_id):
+        registration_slot_id = int(ri["registration_slot_id"]) if "registration_slot_id" in ri.keys() and ri["registration_slot_id"] else None
+        if show_has_registration_slots(show_id):
+            if not registration_slot_id:
+                raise ValueError("Please select which day/session you are registering for.")
+            if not show_slot_has_capacity(show_id, registration_slot_id):
+                raise ValueError("That day/session has reached its maximum number of cars.")
+        elif not show_has_capacity(show_id):
             raise ValueError("This show has reached its maximum number of cars.")
 
         existing_final = cur.execute(
@@ -1743,6 +1960,7 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
                     make = ?,
                     model = ?,
                     insurance_carrier = ?,
+                    registration_slot_id = ?,
                     registration_payment_status = 'paid',
                     registration_amount_cents = ?,
                     registration_session_id = ?,
@@ -1765,6 +1983,7 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
                     ri["make"],
                     ri["model"],
                     ri["insurance_carrier"] if "insurance_carrier" in ri.keys() else "",
+                    registration_slot_id,
                     int(ri["amount_cents"] or 0),
                     stripe_session_id,
                     ri["waiver_signed_name"],
@@ -1780,13 +1999,13 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
             cur.execute(
                 """
                 INSERT INTO show_cars (
-                    show_id, person_id, car_number, car_token, year, make, model, insurance_carrier,
+                    show_id, person_id, car_number, car_token, year, make, model, insurance_carrier, registration_slot_id,
                     registration_payment_status, registration_amount_cents, registration_session_id,
                     waiver_signed_name, waiver_signed_at, waiver_version, waiver_text, waiver_text_sha256, waiver_template_id,
                     waiver_received, waiver_received_at, waiver_received_by,
                     is_placeholder, registration_state
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, 1, datetime('now'), 'electronic', 0, 'claimed')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, 1, datetime('now'), 'electronic', 0, 'claimed')
                 """,
                 (
                     show_id,
@@ -1797,6 +2016,7 @@ def finalize_registration_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
                     ri["make"],
                     ri["model"],
                     ri["insurance_carrier"] if "insurance_carrier" in ri.keys() else "",
+                    registration_slot_id,
                     "paid",
                     int(ri["amount_cents"] or 0),
                     stripe_session_id,
@@ -2738,9 +2958,14 @@ def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
             p.opt_in_future,
             p.sponsor_opt_in,
             p.consent_version,
-            p.consent_text
+            p.consent_text,
+            slot.slot_label,
+            slot.slot_date,
+            slot.start_time AS slot_start_time,
+            slot.end_time AS slot_end_time
         FROM show_cars sc
         JOIN people p ON p.id = sc.person_id
+        LEFT JOIN show_registration_slots slot ON slot.id = sc.registration_slot_id
         WHERE sc.show_id = ?
         ORDER BY sc.car_number ASC
         """,
@@ -2752,7 +2977,16 @@ def export_show_cars_rows(show_id: int) -> List[sqlite3.Row]:
 
 def export_registration_intents_for_show(show_id: int) -> List[sqlite3.Row]:
     conn = _conn()
-    rows = conn.execute("SELECT * FROM registration_intents WHERE show_id = ? ORDER BY created_at ASC", (show_id,)).fetchall()
+    rows = conn.execute(
+        """
+        SELECT ri.*, slot.slot_label, slot.slot_date, slot.start_time AS slot_start_time, slot.end_time AS slot_end_time
+        FROM registration_intents ri
+        LEFT JOIN show_registration_slots slot ON slot.id = ri.registration_slot_id
+        WHERE ri.show_id = ?
+        ORDER BY ri.created_at ASC
+        """,
+        (show_id,),
+    ).fetchall()
     conn.close()
     return rows
 
@@ -2830,6 +3064,7 @@ def build_snapshot_zip_bytes(show_id: int) -> Tuple[bytes, str]:
         zf.writestr("show.csv", _rows_to_csv_bytes([show]))
         zf.writestr("people.csv", _rows_to_csv_bytes(export_people_rows_for_show(show_id)))
         zf.writestr("show_cars.csv", _rows_to_csv_bytes(export_show_cars_rows(show_id)))
+        zf.writestr("registration_slots.csv", _rows_to_csv_bytes(list_registration_slots(show_id, public_only=False)))
         zf.writestr("registration_intents.csv", _rows_to_csv_bytes(export_registration_intents_for_show(show_id)))
         zf.writestr("votes.csv", _rows_to_csv_bytes(export_votes_for_show(show_id)))
         zf.writestr("vote_intents.csv", _rows_to_csv_bytes(export_vote_intents_for_show(show_id)))

@@ -13,6 +13,34 @@
   {% endif %}
 
   <form method="POST" action="{{ url_for('placeholder_claim_submit', show_slug=show['slug'], car_token=car['car_token']) }}" class="space-y-6">
+    {% if registration_slots %}
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold mb-2">Choose your day/session</h2>
+      <p class="text-sm text-slate-600 mb-4">Each day has its own capacity. Full days will close automatically.</p>
+      <div class="grid gap-3">
+        {% for slot in registration_slots %}
+        <label class="flex items-start gap-3 rounded-2xl border {% if slot['is_full'] == 1 %}border-slate-200 bg-slate-50 opacity-70{% else %}border-slate-200 bg-white hover:bg-slate-50{% endif %} p-4">
+          <input type="radio" name="registration_slot_id" value="{{ slot['id'] }}" class="mt-1" {% if slot['is_full'] == 1 %}disabled{% else %}required{% endif %}>
+          <span class="flex-1">
+            <span class="block font-semibold text-slate-900">{{ slot['slot_label'] }}</span>
+            <span class="block text-sm text-slate-600">
+              {% if slot['slot_date'] %}{{ slot['slot_date'] }}{% endif %}
+              {% if slot['start_time'] or slot['end_time'] %}{% if slot['slot_date'] %} • {% endif %}{{ slot['start_time'] }}{% if slot['end_time'] %}–{{ slot['end_time'] }}{% endif %}{% endif %}
+            </span>
+            <span class="block text-xs mt-1 {% if slot['is_full'] == 1 %}text-red-600{% else %}text-emerald-700{% endif %}">
+              {% if slot['capacity'] and slot['capacity'] > 0 %}
+                {% if slot['is_full'] == 1 %}Full{% else %}{{ slot['remaining_count'] }} of {{ slot['capacity'] }} spots left{% endif %}
+              {% else %}
+                Open capacity
+              {% endif %}
+            </span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 class="text-lg font-semibold mb-4">Owner information</h2>
       <div class="grid gap-4 md:grid-cols-2">

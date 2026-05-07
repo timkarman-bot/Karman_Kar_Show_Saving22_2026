@@ -1,155 +1,161 @@
 {% extends "base.html" %}
-{% set title = "Register • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
+{% set title = "Register Your Car • " ~ show['title'] %}
 
 {% block content %}
 <div class="max-w-3xl mx-auto">
-  <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-    <div class="text-center">
-      <h1 class="text-3xl font-semibold tracking-tight">Register Your Car</h1>
-      <p class="mt-2 text-slate-600">{{ show["title"] }}</p>
-    </div>
-
-    <div class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-      <div class="font-semibold text-slate-900 mb-2">Event Details</div>
-
-      {% if show["date"] %}
-        <div><span class="font-semibold">Date:</span> {{ show["date"] }}</div>
-      {% endif %}
-
-      {% if show["time"] %}
-        <div><span class="font-semibold">General Time:</span> {{ show["time"] }}</div>
-      {% endif %}
-
-      {% if show["cars_arrive_time"] %}
-        <div><span class="font-semibold">Cars Arrive:</span> {{ show["cars_arrive_time"] }}</div>
-      {% endif %}
-
-      {% if show["day_of_registration_time"] %}
-        <div><span class="font-semibold">Day-of Registration:</span> {{ show["day_of_registration_time"] }}</div>
-      {% endif %}
-
-      {% if show["show_start_time"] %}
-        <div><span class="font-semibold">Show Starts:</span> {{ show["show_start_time"] }}</div>
-      {% endif %}
-
-      {% if show["show_end_time"] %}
-        <div><span class="font-semibold">Show Ends:</span> {{ show["show_end_time"] }}</div>
-      {% endif %}
-
-      {% if show["location_name"] %}
-        <div><span class="font-semibold">Location:</span> {{ show["location_name"] }}</div>
-      {% endif %}
-
-      {% if show["address"] and not show["hide_address"] %}
-        <div><span class="font-semibold">Address:</span> {{ show["address"] }}</div>
-      {% endif %}
-    </div>
-
-    {% if error %}
-      <div class="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
-    {% endif %}
-
-    <form method="POST" action="{{ url_for('register_submit') }}" class="mt-6 space-y-6">
-      <div class="rounded-3xl border border-slate-200 bg-slate-50 p-6">
-        <h2 class="text-lg font-semibold">Owner information</h2>
-        <div class="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label class="text-sm font-semibold">Full name</label>
-            <input required name="name" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
-          </div>
-          <div>
-            <label class="text-sm font-semibold">Phone</label>
-            <input name="phone" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
-          </div>
-          <div class="md:col-span-2">
-            <label class="text-sm font-semibold">Email</label>
-            <input type="email" name="email" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
-          </div>
-        </div>
-      </div>
-
-      <div class="rounded-3xl border border-slate-200 bg-slate-50 p-6">
-        <h2 class="text-lg font-semibold">Vehicle information</h2>
-        <div class="mt-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          Car number will be assigned automatically at registration.
-        </div>
-
-        <div class="mt-4 grid gap-4 md:grid-cols-3">
-          <div>
-            <label class="text-sm font-semibold">Year</label>
-            <input required name="year" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
-          </div>
-          <div>
-            <label class="text-sm font-semibold">Make</label>
-            <input required name="make" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
-          </div>
-          <div>
-            <label class="text-sm font-semibold">Model</label>
-            <input required name="model" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
-          </div>
-          <div class="md:col-span-3">
-            <label class="text-sm font-semibold">Insurance carrier <span class="text-slate-500">(optional)</span></label>
-            <input name="insurance_carrier"
-    class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3"
-    placeholder="Example: State Farm, GEICO, Progressive"
-  >
-</div>
-        </div>
-      </div>
-
-      <div class="rounded-3xl border border-slate-200 bg-slate-50 p-6">
-        <h2 class="text-lg font-semibold">Communication preferences</h2>
-        <div class="mt-4 space-y-3">
-          <label class="flex items-start gap-3">
-            <input type="checkbox" name="opt_in_future" class="mt-1">
-            <span class="text-sm text-slate-700">Yes — notify me about future car shows and events.</span>
-          </label>
-          <label class="flex items-start gap-3">
-            <input type="checkbox" name="sponsor_opt_in" class="mt-1">
-            <span class="text-sm text-slate-700">I agree that event sponsors may contact me with relevant offers.</span>
-          </label>
-        </div>
-        <div class="mt-4 text-xs text-slate-500 leading-relaxed">
-          By submitting this form you agree Karman Kar Shows & Events may contact you about this event and future events if selected.
-          If you opt in above, participating sponsors may also contact you. Message and data rates may apply.
-          You may opt out at any time.
-        </div>
-      </div>
-
-      <div class="rounded-3xl border border-slate-200 bg-slate-50 p-6">
-        <h2 class="text-lg font-semibold">Event waiver</h2>
-        {% if show["waiver_version"] %}
-          <div class="mt-2 text-xs text-slate-500">Version {{ show["waiver_version"] }}</div>
-        {% endif %}
-        <div class="mt-4 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 whitespace-pre-line text-sm leading-relaxed">
-          {{ show["waiver_text"] }}
-        </div>
-        <div class="mt-4">
-          <label class="text-sm font-semibold">Electronic signature</label>
-          <input required name="waiver_signed_name" placeholder="Type your full name" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
-          <label class="mt-3 flex items-start gap-3">
-            <input required type="checkbox" name="waiver_accepted" class="mt-1">
-            <span class="text-sm text-slate-700">
-  I agree to the event waiver above, understand this electronic signature is legally binding,
-  acknowledge all events are rain or shine, and understand registration fees are non-refundable unless otherwise stated.
-</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-  <div class="text-sm text-slate-600">Registration fee</div>
-  <div class="mt-1 text-3xl font-semibold">${{ "%.2f"|format((show["registration_fee_cents"] or 0) / 100) }}</div>
-
-  <div class="mt-3 text-xs text-slate-500">
-    <a href="/privacy" class="underline" target="_blank">Privacy Policy</a>
+  <div class="text-center mb-8">
+    <h1 class="text-3xl font-semibold tracking-tight">Register Your Car</h1>
+    <p class="mt-2 text-slate-600">{{ show['title'] }}</p>
   </div>
 
-  <button class="btn btn-primary mt-4" type="submit">
-    {% if show["registration_fee_cents"] > 0 %}Continue to Payment{% else %}Complete Registration{% endif %}
-  </button>
-</div>
-    </form>
-  </section>
+  {% if error %}
+    <div class="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('register_submit') }}" class="space-y-6">
+
+    {% if registration_slots %}
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold mb-2">Choose your day/session</h2>
+      <p class="text-sm text-slate-600 mb-4">Each day has its own capacity. Full days will close automatically.</p>
+      <div class="grid gap-3">
+        {% for slot in registration_slots %}
+        <label class="flex items-start gap-3 rounded-2xl border {% if slot['is_full'] == 1 %}border-slate-200 bg-slate-50 opacity-70{% else %}border-slate-200 bg-white hover:bg-slate-50{% endif %} p-4">
+          <input
+            type="radio"
+            name="registration_slot_id"
+            value="{{ slot['id'] }}"
+            class="mt-1"
+            {% if slot['is_full'] == 1 %}disabled{% else %}required{% endif %}
+          >
+          <span class="flex-1">
+            <span class="block font-semibold text-slate-900">{{ slot['slot_label'] }}</span>
+            <span class="block text-sm text-slate-600">
+              {% if slot['slot_date'] %}{{ slot['slot_date'] }}{% endif %}
+              {% if slot['start_time'] or slot['end_time'] %}
+                {% if slot['slot_date'] %} • {% endif %}{{ slot['start_time'] }}{% if slot['end_time'] %}–{{ slot['end_time'] }}{% endif %}
+              {% endif %}
+            </span>
+            <span class="block text-xs mt-1 {% if slot['is_full'] == 1 %}text-red-600{% else %}text-emerald-700{% endif %}">
+              {% if slot['capacity'] and slot['capacity'] > 0 %}
+                {% if slot['is_full'] == 1 %}Full{% else %}{{ slot['remaining_count'] }} of {{ slot['capacity'] }} spots left{% endif %}
+              {% else %}
+                Open capacity
+              {% endif %}
+            </span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold mb-4">Owner information</h2>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label class="text-sm font-semibold">Full name</label>
+          <input required name="name" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Phone</label>
+          <input name="phone" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+        <div class="md:col-span-2">
+          <label class="text-sm font-semibold">Email</label>
+          <input type="email" name="email" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold mb-4">Vehicle information</h2>
+      <div class="grid gap-4 md:grid-cols-3">
+        <div>
+          <label class="text-sm font-semibold">Year</label>
+          <input required name="year" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Make</label>
+          <input required name="make" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+        <div>
+          <label class="text-sm font-semibold">Model</label>
+          <input required name="model" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        </div>
+        <div class="md:col-span-3">
+          <label class="text-sm font-semibold">Insurance carrier <span class="text-slate-500">(optional)</span></label>
+          <input name="insurance_carrier" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3" placeholder="Example: State Farm, GEICO, Progressive">
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold mb-4">Communication preferences</h2>
+      <div class="space-y-3">
+        <label class="flex items-start gap-3">
+          <input type="checkbox" name="opt_in_future" class="mt-1">
+          <span class="text-sm text-slate-700">Yes — notify me about future car shows and events.</span>
+        </label>
+        <label class="flex items-start gap-3">
+          <input type="checkbox" name="sponsor_opt_in" class="mt-1">
+          <span class="text-sm text-slate-700">I agree that event sponsors may contact me with relevant offers.</span>
+        </label>
+      </div>
+      <div class="mt-4 text-xs text-slate-500 leading-relaxed">
+        By submitting this form you agree Karman Kar Shows & Events may contact you about this event and future events if selected.
+        If you opt in above, participating sponsors may also contact you. Message and data rates may apply.
+        You may opt out at any time.
+      </div>
+    </div>
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold mb-4">Event waiver</h2>
+      {% if show["waiver_version"] %}
+        <div class="mt-2 text-xs text-slate-500">Version {{ show["waiver_version"] }}</div>
+      {% endif %}
+      <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 text-sm leading-relaxed max-h-72 overflow-y-auto whitespace-pre-line">
+        {{ show["waiver_text"] }}
+      </div>
+      <div class="mt-4">
+        <label class="text-sm font-semibold">Electronic signature</label>
+        <input required name="waiver_signed_name" placeholder="Type your full name" class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3">
+        <label class="flex items-start gap-3 mt-3">
+          <input required type="checkbox" name="waiver_accepted" class="mt-1">
+          <span class="text-sm text-slate-700">I agree to the event waiver above and understand this electronic signature is legally binding.</span>
+        </label>
+      </div>
+    </div>
+
+    {% if show["registration_fee_cents"] and show["registration_fee_cents"] > 0 %}
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold mb-4">Payment method</h2>
+      <div class="space-y-3">
+        <label class="flex items-start gap-3 rounded-2xl border border-slate-200 p-4">
+          <input type="radio" name="registration_payment_method" value="card" class="mt-1" checked>
+          <span>
+            <span class="block font-semibold text-slate-900">Card</span>
+            <span class="block text-sm text-slate-600">Pay securely online.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3 rounded-2xl border border-slate-200 p-4">
+          <input type="radio" name="registration_payment_method" value="cash" class="mt-1">
+          <span>
+            <span class="block font-semibold text-slate-900">Cash / collected at show</span>
+            <span class="block text-sm text-slate-600">Registration is saved and marked for staff cash review.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm text-center">
+      <div class="text-slate-600 text-sm">Registration fee</div>
+      <div class="text-3xl font-semibold mt-1">${{ "%.2f"|format((show["registration_fee_cents"] or 0) / 100) }}</div>
+      <button class="btn btn-primary mt-4" type="submit">
+        {% if show["registration_fee_cents"] > 0 %}Continue Registration{% else %}Complete Registration{% endif %}
+      </button>
+    </div>
+  </form>
 </div>
 {% endblock %}

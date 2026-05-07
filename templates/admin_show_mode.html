@@ -51,6 +51,7 @@
             <th class="py-3 pr-4">#</th>
             <th class="py-3 pr-4">Status</th>
             <th class="py-3 pr-4">Owner</th>
+            <th class="py-3 pr-4">Day/Session</th>
             <th class="py-3 pr-4">Vehicle</th>
             <th class="py-3 pr-4">Payment</th>
             <th class="py-3 pr-4">Actions</th>
@@ -72,6 +73,12 @@
             <td class="py-3 pr-4">
               <div class="font-medium text-slate-900">{{ car['owner_name'] or '—' }}</div>
               <div class="text-xs text-slate-500">{{ car['owner_phone'] or '' }}</div>
+            </td>
+            <td class="py-3 pr-4">
+              <div>{{ car['slot_label'] or '—' }}</div>
+              {% if car['slot_date'] or car['slot_start_time'] or car['slot_end_time'] %}
+                <div class="text-xs text-slate-500">{{ car['slot_date'] or '' }} {% if car['slot_start_time'] %}{{ car['slot_start_time'] }}{% endif %}{% if car['slot_end_time'] %}–{{ car['slot_end_time'] }}{% endif %}</div>
+              {% endif %}
             </td>
             <td class="py-3 pr-4">{{ car['year'] }} {{ car['make'] }} {{ car['model'] }}</td>
             <td class="py-3 pr-4">
@@ -98,7 +105,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td class="py-6 text-slate-500" colspan="6">No cards found for this active show.</td></tr>
+          <tr><td class="py-6 text-slate-500" colspan="7">No cards found for this active show.</td></tr>
           {% endfor %}
         </tbody>
       </table>
