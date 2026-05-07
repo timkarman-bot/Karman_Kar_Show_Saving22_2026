@@ -1128,19 +1128,59 @@ def show_page(slug: str):
         registration_slots=_registration_slots_for_public(int(show["id"])),
     )
 
+def _registration_show_or_response(show_slug: Optional[str] = None):
+    """Return the selected show for registration, or a Flask response tuple.
+
+    Public registration should be locked to a show slug whenever possible so
+    multiple upcoming shows can accept registrations at the same time without
+    depending on whichever show is currently active.
+    """
+    if show_slug:
+        show = get_show_by_slug(show_slug)
+        if not show:
+            return None, (render_template("registration_closed.html", show=None, error="That show was not found."), 404)
+    else:
+        show = get_active_show()
+        if not show:
+            return None, ("No active show configured.", 500)
+    show = _show_with_rendered_waiver(show)
+    if not prereg_allowed(show):
+        return None, (render_template("registration_closed.html", show=show), 403)
+    return show, None
+
+
 @app.get("/register")
 def register_page():
-    show = _show_with_rendered_waiver(get_active_show())
-    if not show:
-        return "No active show configured.", 500
-    if not prereg_allowed(show):
-        return render_template("registration_closed.html", show=show), 403
+    show, response = _registration_show_or_response(None)
+    if response:
+        return response
+    return render_template("register.html", show=show, registration_slots=_registration_slots_for_public(int(show["id"])))
+
+
+@app.get("/register/<show_slug>")
+def register_page_for_show(show_slug: str):
+    show, response = _registration_show_or_response(show_slug)
+    if response:
+        return response
     return render_template("register.html", show=show, registration_slots=_registration_slots_for_public(int(show["id"])))
     
+
 @app.post("/register")
 @rate_limit("register", 20, 300)
 def register_submit():
-    show = _show_with_rendered_waiver(get_active_show())
+    return _register_submit_impl(None)
+
+
+@app.post("/register/<show_slug>")
+@rate_limit("register", 20, 300)
+def register_submit_for_show(show_slug: str):
+    return _register_submit_impl(show_slug)
+
+
+def _register_submit_impl(show_slug: Optional[str] = None):
+    show, response = _registration_show_or_response(show_slug)
+    if response:
+        return response
     if not show:
         return "No active show configured.", 500
     if not prereg_allowed(show):
@@ -1290,7 +1330,7 @@ def register_submit():
 
     _require_platform_stripe()
     success_url = _abs_url(url_for("registration_success", show_slug=show["slug"], intent_token=intent_token)) + "?session_id={CHECKOUT_SESSION_ID}"
-    cancel_url = _abs_url(url_for("register_page"))
+    cancel_url = _abs_url(url_for("register_page_for_show", show_slug=show["slug"]))
 
     session_obj = stripe.checkout.Session.create(
         mode="payment",
