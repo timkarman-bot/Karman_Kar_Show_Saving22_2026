@@ -1,4 +1,3 @@
-html
 {% extends "base.html" %}
 {% set title = "Registration Closed • " ~ (show["title"] if show else "Karman Kar Shows & Events") %}
 
@@ -18,9 +17,7 @@ html
     </h1>
 
     {% if error %}
-      <p class="mt-2 text-slate-700">
-        {{ error }}
-      </p>
+      <p class="mt-2 text-slate-700">{{ error }}</p>
     {% else %}
       <p class="mt-2 text-slate-700">
         This show is currently set to a pop-up or day-of workflow, so pre-registration is turned off.
@@ -33,18 +30,9 @@ html
       <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div class="text-sm text-slate-800">
           <div class="font-semibold">{{ show["title"] }}</div>
-          {% if show["date"] %}
-            <div class="mt-1 text-slate-600">{{ show["date"] }}</div>
-          {% endif %}
-          {% if show["time"] %}
-            <div class="mt-1 text-slate-600">{{ show["time"] }}</div>
-          {% endif %}
-          {% if show["location_name"] %}
-            <div class="mt-1 text-slate-600">{{ show["location_name"] }}</div>
-          {% endif %}
-          {% if show["address"] %}
-            <div class="mt-1 text-slate-600">{{ show["address"] }}</div>
-          {% endif %}
+          {% if show["date"] %}<div class="mt-1 text-slate-600">{{ show["date"] }}</div>{% endif %}
+          {% if show["location_name"] %}<div class="mt-1 text-slate-600">{{ show["location_name"] }}</div>{% endif %}
+          {% if show["address"] %}<div class="mt-1 text-slate-600">{{ show["address"] }}</div>{% endif %}
         </div>
       </div>
 
@@ -57,19 +45,27 @@ html
           registered
         </div>
       {% endif %}
-
-      <div class="mt-6 flex flex-wrap gap-3">
-        <a class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90"
-           href="{{ url_for('show_page', slug=show['slug']) }}">
-          Back to show
-        </a>
-
-        <a class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50"
-           href="{{ url_for('events') }}">
-          View events
-        </a>
-      </div>
     {% endif %}
+
+    <div class="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
+      <div class="font-semibold">Need help with registration?</div>
+      <div class="mt-1">
+        Email
+        <a class="font-semibold underline" href="mailto:info@karmankarshowsandevents.com{% if show %}?subject=Registration%20Help%20-%20{{ show['title']|urlencode }}{% endif %}">info@karmankarshowsandevents.com</a>
+      </div>
+      <div class="mt-1 text-xs text-blue-900">Plain text email to copy/paste: info@karmankarshowsandevents.com</div>
+    </div>
+
+    <div class="mt-6 flex flex-wrap gap-3">
+      {% if show %}
+      <a class="px-5 py-3 rounded-2xl bg-slate-900 text-white hover:opacity-90" href="{{ url_for('show_page', slug=show['slug']) }}">
+        Back to show
+      </a>
+      {% endif %}
+      <a class="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50" href="{{ url_for('events') }}">
+        View events
+      </a>
+    </div>
   </section>
 </div>
 {% endblock %}

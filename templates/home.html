@@ -6,10 +6,11 @@
   <div class="rounded-3xl p-8 glass border border-slate-200 shadow-sm">
     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 text-white text-xs">Current Featured Event</div>
     <h1 class="mt-4 text-4xl font-semibold tracking-tight">{{ show["title"] }}</h1>
-    <p class="mt-3 text-slate-700 max-w-xl">{{ show["description"] }}</p>
+    {% if show["description"] %}
+      <div class="mt-3 text-slate-700 max-w-xl leading-relaxed whitespace-pre-line">{{ show["description"] }}</div>
+    {% endif %}
     <div class="mt-6 grid gap-2 text-sm text-slate-700">
       {% if show["date"] %}<div><span class="font-semibold">Date:</span> {{ show["date"] }}</div>{% endif %}
-      {% if show["time"] %}<div><span class="font-semibold">Time:</span> {{ show["time"] }}</div>{% endif %}
       {% if show["location_name"] %}<div><span class="font-semibold">Location:</span> {{ show["location_name"] }}</div>{% endif %}
       {% if show["address"] and not show["hide_address"] %}<div><span class="font-semibold">Address:</span> {{ show["address"] }}</div>{% endif %}
       {% if show["benefiting"] %}<div><span class="font-semibold">Benefiting:</span> {{ show["benefiting"] }}</div>{% endif %}

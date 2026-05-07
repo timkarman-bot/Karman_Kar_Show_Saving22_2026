@@ -11,7 +11,9 @@
 <section class="grid gap-6 lg:grid-cols-[1.4fr,.9fr] items-start">
   <div class="rounded-3xl p-8 glass border border-slate-200 shadow-sm">
     <h1 class="text-4xl font-semibold tracking-tight">{{ show["title"] }}</h1>
-    <p class="mt-3 text-slate-700 max-w-2xl">{{ show["description"] }}</p>
+    {% if show["description"] %}
+      <div class="mt-3 text-slate-700 max-w-2xl leading-relaxed whitespace-pre-line">{{ show["description"] }}</div>
+    {% endif %}
     <div class="mt-6 grid gap-2 text-sm text-slate-700">
       {% if show["show_type"] %}
         <div><span class="font-semibold">Event type:</span>
@@ -58,6 +60,14 @@
       <a class="btn btn-outline" href="{{ url_for('events') }}">Upcoming events</a>
       <a class="btn btn-outline" href="{{ url_for('sponsorship.public_sponsorship_page', show_slug=show['slug']) }}">Sponsor this event</a>
     </div>
+
+    {% if prereg_allowed(show) %}
+    <div class="mt-5 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-700">
+      Trouble registering? Email
+      <a class="font-semibold underline" href="mailto:info@karmankarshowsandevents.com?subject=Registration%20Help%20-%20{{ show['title']|urlencode }}">info@karmankarshowsandevents.com</a>
+      <span class="text-slate-500">(copy/paste: info@karmankarshowsandevents.com)</span>
+    </div>
+    {% endif %}
   </div>
   {% if show["flyer_image_path"] %}
   <div class="rounded-3xl bg-white border border-slate-200 shadow-sm p-4">

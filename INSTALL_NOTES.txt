@@ -1,40 +1,26 @@
-Karman Kar Shows & Events — Show-Specific Registration Upgrade
-Date: 2026-05-07
+Karman Kar Shows & Events — v9 formatting + registration help
 
-Purpose
-- Allows multiple upcoming shows to take registrations at the same time.
-- Adds show-specific registration URLs:
-  /register/<show-slug>
-- Keeps /register as a safe fallback to the current active show.
-- Updates the show detail page and registration form so people register for the intended show, not whichever show is active.
-
-Files included
-- app.py
-- database.py
-- templates/register.html
+Files included:
 - templates/show.html
-- templates/admin.html
-- templates/admin_shows.html
+- templates/home.html
+- templates/register.html
 - templates/placeholder_claim.html
+- templates/registration_closed.html
+- app.py (unchanged from v8, included for continuity)
+- INSTALL_NOTES.txt
 
-Important URL examples
-- /register/fathers-day-cruise-in-2026
-- /show/fathers-day-cruise-in-2026
+What changed:
+1. Public show descriptions now preserve line breaks and spacing entered in the admin description field.
+2. Home page description also preserves line breaks.
+3. Registration pages now show a help block with a clickable email link.
+4. Registration closed/error page now shows the same help email.
+5. Email is visible in plain text for copy/paste: info@karmankarshowsandevents.com
 
-Post-install checks
-1. Run:
-   python -m py_compile app.py database.py sponsorship_blueprint.py
+Suggested checks before deployment:
+python -m py_compile app.py database.py sponsorship_blueprint.py
+findstr /n /c:"whitespace-pre-line" templates\show.html templates\home.html templatesegister.html templates\placeholder_claim.html
+findstr /n /c:"info@karmankarshowsandevents.com" templates\show.html templatesegister.html templates\placeholder_claim.html templatesegistration_closed.html
 
-2. Confirm routes exist:
-   findstr /n "register/<show_slug>" app.py
-   findstr /n "register_page_for_show" app.py templates\show.html
-   findstr /n "register_submit_for_show" app.py templates\register.html
-
-3. Test in browser:
-   /show/<show-slug>
-   /register/<show-slug>
-   /register
-
-Deployment note
-- Use show-specific registration links on flyers, QR codes, emails, and social media.
-- The plain /register route should only be treated as an admin convenience/fallback.
+git add -A
+git commit -m "Improve public description formatting and registration help"
+git push origin main
