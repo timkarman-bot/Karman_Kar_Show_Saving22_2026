@@ -770,6 +770,7 @@ def create_show_admin(
     slug: str,
     flyer_image_path: str,
     title: str,
+    show_type: str = "full",
     date: str,
     time: str,
     cars_arrive_time: str = "",
@@ -810,10 +811,24 @@ def create_show_admin(
 ) -> int:
     conn = _conn()
     cur = conn.cursor()
+    show_type_clean = (show_type or "full").strip().lower().replace("-", "_")
+    if show_type_clean in {"cruisein", "cruise"}:
+        show_type_clean = "cruise_in"
+    if show_type_clean not in {"full", "popup", "cruise_in"}:
+        show_type_clean = "full"
+
+    voting_mode_clean = (voting_mode or "fundraiser_unlimited").strip().lower()
+    if voting_mode_clean not in {"fundraiser_unlimited", "restricted_single", "none"}:
+        voting_mode_clean = "fundraiser_unlimited"
+
+    payment_mode_clean = (payment_mode or "stripe").strip().lower()
+    if payment_mode_clean not in {"stripe", "external", "none"}:
+        payment_mode_clean = "stripe"
+
     cur.execute(
         """
         INSERT INTO shows (
-            slug, flyer_image_path, title, date, time, cars_arrive_time, day_of_registration_time,
+            slug, flyer_image_path, title, show_type, date, time, cars_arrive_time, day_of_registration_time,
             show_start_time, show_end_time, location_name, address, benefiting,
             suggested_donation, description, status, short_details, public_vote_disclosure, qr_message,
             cta_label, cta_url, show_on_site, sort_order, hide_address, voting_open, is_active,
@@ -821,12 +836,13 @@ def create_show_admin(
             venue_city, venue_state, venue_zip, charity_name, charity_description,
             voting_mode, payment_mode, charity_processor_label, external_payment_url, allow_custom_votes, preset_vote_options, max_votes_per_checkout
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             slug.strip(),
             (flyer_image_path or "").strip(),
             title.strip(),
+            show_type_clean,
             (date or "").strip(),
             (time or "").strip(),
             (cars_arrive_time or "").strip(),
@@ -847,6 +863,8 @@ def create_show_admin(
             int(show_on_site),
             int(sort_order),
             int(hide_address),
+            0,
+            0,
             waiver_template_id,
             (organizer_name or "").strip(),
             (venue_name or "").strip(),
@@ -857,8 +875,8 @@ def create_show_admin(
             (venue_zip or "").strip(),
             (charity_name or "").strip(),
             (charity_description or "").strip(),
-            (voting_mode or "fundraiser_unlimited").strip(),
-            (payment_mode or "stripe").strip(),
+            voting_mode_clean,
+            payment_mode_clean,
             (charity_processor_label or "").strip(),
             (external_payment_url or "").strip(),
             int(allow_custom_votes),
@@ -877,6 +895,7 @@ def update_show_admin_record(
     *,
     slug: str,
     title: str,
+    show_type: str = "full",
     flyer_image_path: str,
     date: str,
     time: str,
@@ -920,7 +939,7 @@ def update_show_admin_record(
     conn.execute(
         """
         UPDATE shows
-        SET slug = ?, title = ?, flyer_image_path = ?, date = ?, time = ?,
+        SET slug = ?, title = ?, show_type = ?, flyer_image_path = ?, date = ?, time = ?,
             cars_arrive_time = ?, day_of_registration_time = ?, show_start_time = ?, show_end_time = ?,
             location_name = ?, address = ?, benefiting = ?, suggested_donation = ?, description = ?, status = ?,
             short_details = ?, public_vote_disclosure = ?, qr_message = ?, cta_label = ?, cta_url = ?,
@@ -934,6 +953,7 @@ def update_show_admin_record(
         (
             slug.strip(),
             title.strip(),
+            (show_type or "full").strip().lower().replace("-", "_"),
             (flyer_image_path or "").strip(),
             (date or "").strip(),
             (time or "").strip(),
@@ -1244,7 +1264,9 @@ def update_show_admin_settings(
     waiver_version: str = "",
 ) -> None:
     st = (show_type or "full").strip().lower()
-    if st not in ("popup", "full"):
+    if st in {"cruise-in", "cruisein"}:
+        st = "cruise_in"
+    if st not in ("popup", "full", "cruise_in"):
         st = "full"
 
     if allow_prereg_override is not None:
@@ -1279,11 +1301,11 @@ def update_show_admin_settings(
         vote_price_cents = 100
 
     voting_mode = (voting_mode or "fundraiser_unlimited").strip().lower()
-    if voting_mode not in {"fundraiser_unlimited", "restricted_single"}:
+    if voting_mode not in {"fundraiser_unlimited", "restricted_single", "none"}:
         voting_mode = "fundraiser_unlimited"
 
     payment_mode = (payment_mode or "stripe").strip().lower()
-    if payment_mode not in {"stripe", "external"}:
+    if payment_mode not in {"stripe", "external", "none"}:
         payment_mode = "stripe"
 
     try:

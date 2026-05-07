@@ -13,10 +13,18 @@
     <h1 class="text-4xl font-semibold tracking-tight">{{ show["title"] }}</h1>
     <p class="mt-3 text-slate-700 max-w-2xl">{{ show["description"] }}</p>
     <div class="mt-6 grid gap-2 text-sm text-slate-700">
+      {% if show["show_type"] %}
+        <div><span class="font-semibold">Event type:</span>
+          {% if show["show_type"] == "cruise_in" %}Cruise In{% elif show["show_type"] == "popup" %}PopUp{% else %}Full Show{% endif %}
+        </div>
+      {% endif %}
       {% if show["date"] %}<div><span class="font-semibold">Date:</span> {{ show["date"] }}</div>{% endif %}
       {% if show["location_name"] %}<div><span class="font-semibold">Location:</span> {{ show["location_name"] }}</div>{% endif %}
       {% if show["benefiting"] %}<div><span class="font-semibold">Benefiting:</span> {{ show["benefiting"] }}</div>{% endif %}
       {% if show["suggested_donation"] %}<div><span class="font-semibold">Admission fee:</span> {{ show["suggested_donation"] }}</div>{% endif %}
+      {% if (show["voting_mode"] if "voting_mode" in show.keys() else "") == "none" %}
+        <div><span class="font-semibold">Voting:</span> Not enabled for this event</div>
+      {% endif %}
     </div>
     <div class="mt-7 flex flex-wrap gap-3">
       {% if prereg_allowed(show) %}<a class="btn btn-primary" href="{{ url_for('register_page') }}">Register your car</a>{% endif %}

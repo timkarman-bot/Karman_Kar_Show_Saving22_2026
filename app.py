@@ -242,7 +242,7 @@ def prereg_allowed(show) -> bool:
         except Exception:
             pass
     st = (show["show_type"] if "show_type" in show.keys() else "full") or "full"
-    return str(st).strip().lower() == "full"
+    return str(st).strip().lower() in {"full", "cruise_in"}
 
 
 def _require_platform_stripe() -> None:
@@ -303,7 +303,7 @@ def _show_payment_mode(show: Any) -> str:
         return "stripe"
     value = (show["payment_mode"] if "payment_mode" in show.keys() else "stripe") or "stripe"
     value = str(value).strip().lower()
-    return value if value in {"stripe", "external"} else "stripe"
+    return value if value in {"stripe", "external", "none"} else "stripe"
 
 
 def _show_voting_mode(show: Any) -> str:
@@ -311,7 +311,26 @@ def _show_voting_mode(show: Any) -> str:
         return "fundraiser_unlimited"
     value = (show["voting_mode"] if "voting_mode" in show.keys() else "fundraiser_unlimited") or "fundraiser_unlimited"
     value = str(value).strip().lower()
-    return value if value in {"fundraiser_unlimited", "restricted_single"} else "fundraiser_unlimited"
+    return value if value in {"fundraiser_unlimited", "restricted_single", "none"} else "fundraiser_unlimited"
+
+
+def _show_voting_disabled(show: Any) -> bool:
+    """True for cruise-ins or events where voting is explicitly disabled."""
+    if not show:
+        return True
+    try:
+        if int(show["voting_open"] or 0) != 1:
+            return True
+    except Exception:
+        return True
+    if _show_voting_mode(show) == "none":
+        return True
+    if _show_payment_mode(show) == "none":
+        return True
+    try:
+        return str(show["show_type"] or "").strip().lower() == "cruise_in"
+    except Exception:
+        return False
 
 
 def _show_max_votes_per_checkout(show: Any) -> int:
@@ -1866,7 +1885,7 @@ def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
     if not car:
         return "Car not found.", 404
 
-    if int(show["voting_open"]) != 1:
+    if _show_voting_disabled(show):
         return render_template("voting_closed.html", show=show)
 
     return render_template(
@@ -1896,8 +1915,8 @@ def create_checkout_session():
     if not show:
         return jsonify({"ok": False, "error": "Show not found."}), 404
 
-    if int(show["voting_open"]) != 1:
-        return jsonify({"ok": False, "error": "Voting is currently closed."}), 403
+    if _show_voting_disabled(show):
+        return jsonify({"ok": False, "error": "Voting is disabled or currently closed for this event."}), 403
 
     if category_slug not in CATEGORY_SLUGS:
         return jsonify({"ok": False, "error": "Invalid category."}), 400
@@ -1918,6 +1937,8 @@ def create_checkout_session():
     vote_price_cents = int(show["vote_price_cents"] or 100)
     amount_cents = vote_qty * vote_price_cents
     payment_mode = _show_payment_mode(show)
+    if payment_mode == "none":
+        return jsonify({"ok": False, "error": "Voting payments are disabled for this event."}), 403
 
     if payment_mode == "external":
         external_payment_url = _show_external_payment_url(show)
@@ -2486,7 +2507,7 @@ def admin_show_settings():
     if not show:
         return "No active show.", 500
 
-    show_type = (request.form.get("show_type") or "full").strip().lower()
+    show_type = (request.form.get("show_type") or "full").strip().lower().replace("-", "_")
     ov_raw = request.form.get("allow_prereg_override", "").strip()
     ov = None if ov_raw == "" else int(ov_raw) if ov_raw.isdigit() else None
     max_cars_raw = request.form.get("max_cars", "").strip()
@@ -2569,8 +2590,12 @@ def admin_shows_create():
     except ValueError:
         waiver_template_id = None
 
-    voting_mode = request.form.get("voting_mode", "fundraiser_unlimited").strip()
-    payment_mode = request.form.get("payment_mode", "stripe").strip()
+    voting_mode = request.form.get("voting_mode", "fundraiser_unlimited").strip().lower()
+    payment_mode = request.form.get("payment_mode", "stripe").strip().lower()
+    show_type = (request.form.get("show_type") or "full").strip().lower().replace("-", "_")
+    if show_type == "cruise_in":
+        voting_mode = "none" if voting_mode == "fundraiser_unlimited" else voting_mode
+        payment_mode = "none" if payment_mode == "stripe" else payment_mode
     external_payment_url = request.form.get("external_payment_url", "").strip()
     charity_processor_label = request.form.get("charity_processor_label", "").strip()
     allow_custom_votes = 1 if request.form.get("allow_custom_votes") else 0
@@ -2595,6 +2620,7 @@ def admin_shows_create():
         slug=slug,
         flyer_image_path=flyer_image_path,
         title=title,
+        show_type=show_type,
         date=request.form.get("date", "").strip(),
         time=request.form.get("time", "").strip(),
         cars_arrive_time=request.form.get("cars_arrive_time", "").strip(),
@@ -2652,8 +2678,12 @@ def admin_shows_update(show_id: int):
     except ValueError:
         waiver_template_id = None
 
-    voting_mode = request.form.get("voting_mode", "fundraiser_unlimited").strip()
-    payment_mode = request.form.get("payment_mode", "stripe").strip()
+    voting_mode = request.form.get("voting_mode", "fundraiser_unlimited").strip().lower()
+    payment_mode = request.form.get("payment_mode", "stripe").strip().lower()
+    show_type = (request.form.get("show_type") or "full").strip().lower().replace("-", "_")
+    if show_type == "cruise_in":
+        voting_mode = "none" if voting_mode == "fundraiser_unlimited" else voting_mode
+        payment_mode = "none" if payment_mode == "stripe" else payment_mode
     external_payment_url = request.form.get("external_payment_url", "").strip()
     charity_processor_label = request.form.get("charity_processor_label", "").strip()
     allow_custom_votes = 1 if request.form.get("allow_custom_votes") else 0
@@ -2679,6 +2709,7 @@ def admin_shows_update(show_id: int):
         show_id,
         slug=slug,
         title=request.form.get("title", "").strip(),
+        show_type=show_type,
         flyer_image_path=flyer_image_path,
         date=request.form.get("date", "").strip(),
         time=request.form.get("time", "").strip(),

@@ -1,57 +1,37 @@
-Karman Kar Shows & Events - Multi-Day Registration Slots Upgrade (v5)
+Karman Kar Shows & Events — Cruise In / Voting Disabled Cleanup v6
 
-WHAT THIS ADDS
-- Multi-day / session-based registration capacity.
-- Each show can have up to 5 registration slots/sessions from Manage Shows.
-- Each slot has its own capacity, such as Saturday cap 30 and Sunday cap 30.
-- Public registration requires a day/session selection when active slots exist.
-- Full slots become unavailable automatically.
-- Registration ZIP exports now include registration_slots.csv and slot columns on cars/intents.
-- Keeps the prior cash show mode and export-any-show upgrade intact.
-
-FILES INCLUDED
+Files included:
 - app.py
 - database.py
 - templates/admin_shows.html
+- templates/admin.html
 - templates/register.html
 - templates/placeholder_claim.html
 - templates/admin_show_mode.html
+- templates/vote_qty.html
+- templates/voting_closed.html
+- templates/show.html
 
-INSTALL SAFELY
-1. Copy ONLY these files into the same paths in C:\karman-kar-shows.
-2. Do not delete the full templates folder.
-3. Overwrite the matching files only.
-4. Run these checks:
+What changed:
+1. Added show type "Cruise In" using internal value cruise_in.
+2. Manage Shows create/update screens now expose Type of Show.
+3. Admin dashboard Show Type now includes Cruise In.
+4. Voting Mode now supports "None — voting disabled".
+5. Voting Payment Mode now supports "None — no vote payment".
+6. Cruise In defaults voting/payment to none if left on default values during create/update.
+7. Registration slots remain fully customizable; blank or 0 capacity means no cap.
+8. Voting routes now return closed/disabled instead of attempting payment when voting/payment is none.
+9. Existing Full and PopUp behavior remains intact.
 
-   findstr /n "show_registration_slots" database.py
-   findstr /n "registration_slot_id" app.py
-   findstr /n "Registration Days / Sessions" templates\admin_shows.html
-   findstr /n "Choose your day/session" templates\register.html
+Verification commands:
+python -m py_compile app.py database.py
 
-5. Then commit:
+findstr /n "cruise_in" app.py database.py templates\admin_shows.html templates\admin.html
+findstr /n "Voting is not enabled" templates\voting_closed.html templates\vote_qty.html
+findstr /n "payment_mode == \"none\"" app.py
 
-   git status --short
-   git add app.py database.py templates\admin_shows.html templates\register.html templates\placeholder_claim.html templates\admin_show_mode.html INSTALL_NOTES.txt
-   git commit -m "Add multi-day registration slots with per-day capacity"
-   git push origin main
-
-FATHER'S DAY WEEKEND SETUP
-In Admin > Manage Shows, edit the church cruise-in show and add:
-
-Slot 1:
-- Label: Saturday Cruise-In
-- Date: Saturday Father's Day Weekend
-- Start: 4 PM
-- End: 8 PM
-- Cap: 30
-- Active: checked
-
-Slot 2:
-- Label: Sunday Cruise-In
-- Date: Sunday Father's Day Weekend
-- Start: 7 AM
-- End: 1 PM
-- Cap: 30
-- Active: checked
-
-For this event, use no awards/voting. Set show type as full or popup as you prefer, but keep registration enabled.
+Git:
+git status --short
+git add -A
+git commit -m "Add cruise-in show type and voting disabled mode"
+git push origin main
