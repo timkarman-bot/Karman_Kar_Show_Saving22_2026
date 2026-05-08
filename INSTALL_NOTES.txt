@@ -1,57 +1,25 @@
-Karman Kar Shows & Events — v10 Sponsorship Toggle Upgrade
-===========================================================
+Karman Kar Shows & Events — v11 Sponsor Button Upcoming Fix
 
-Purpose
--------
-Adds a per-show Allow Sponsorships switch so public sponsor links/forms can be hidden for events that do not use sponsors.
+Purpose:
+- Hide the "Sponsor This Show" button on the Upcoming page when that show has sponsorships turned off.
+- Preserve the direct sponsorship URL protection that already shows sponsorship_closed.html.
+- Preserve existing show/home/base behavior that already uses sponsorship_allowed(show).
 
-Files included
---------------
-app.py
-database.py
-sponsorship_blueprint.py
-templates/admin_shows.html
-templates/base.html
-templates/home.html
-templates/show.html
-templates/sponsorship_closed.html
-templates/sponsorship.html
-INSTALL_NOTES.txt
+Replacement files:
+- templates/events.html
 
-What changed
-------------
-1. Adds shows.allow_sponsorships with default ON for existing shows.
-2. Adds Allow Sponsorships checkbox on Manage Shows create/update forms.
-3. Hides public Sponsor links on:
-   - top navigation
-   - home page
-   - show details page
-4. Blocks direct /sponsorship/<show_slug> access when sponsorships are disabled.
-5. Blocks public sponsorship form submits if sponsorships are disabled.
-6. Adds a friendly sponsorship_closed.html page.
+Install:
+1. Copy templates/events.html into your project templates folder.
+2. Run:
+   python -m py_compile app.py database.py sponsorship_blueprint.py
+   findstr /n /c:"sponsorship_allowed(upcoming_show)" templates\events.html
+   findstr /n /c:"Sponsor This Show" templates\events.html
+3. Commit:
+   git add templates/events.html INSTALL_NOTES.txt
+   git commit -m "Hide upcoming sponsor button when sponsorships disabled"
+   git push origin main
 
-Install
--------
-Copy these files into C:\karman-kar-shows and replace existing files when prompted.
-
-Pre-deploy checks
------------------
-python -m py_compile app.py database.py sponsorship_blueprint.py
-findstr /n /c:"allow_sponsorships" app.py database.py sponsorship_blueprint.py templates\admin_shows.html
-findstr /n /c:"sponsorship_allowed" app.py templates\base.html templates\home.html templates\show.html
-findstr /n /c:"sponsorship_closed.html" app.py sponsorship_blueprint.py
-
-Git
----
-git status --short
-git add -A
-git commit -m "Add per-show sponsorship toggle"
-git push origin main
-
-After deploy
-------------
-1. Open /admin/shows.
-2. Edit a show and uncheck Allow Sponsorships.
-3. Confirm Sponsor link disappears from top nav/home/show page.
-4. Visit /sponsorship/<show-slug> directly and confirm the sponsorship unavailable page appears.
-5. Re-check Allow Sponsorships and confirm sponsor links return.
+Test:
+- Sponsorships ON for upcoming show: Sponsor This Show should appear.
+- Sponsorships OFF for upcoming show: Sponsor This Show should be hidden.
+- Direct /sponsorship/<show-slug> should still show the sponsorship closed page when disabled.

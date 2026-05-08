@@ -4,16 +4,25 @@
 <div class="max-w-4xl mx-auto">
   {% if upcoming_show %}
     <h1 class="text-3xl font-semibold tracking-tight">{{ upcoming_show["title"] or "Upcoming Show" }}</h1>
-    <p class="mt-2 text-slate-600">{{ upcoming_show["description"] or "Check here for the latest details on our next show or pop-up event." }}</p>
+
+    {% if upcoming_show["description"] %}
+      <div class="mt-2 text-slate-600 leading-relaxed whitespace-pre-line">{{ upcoming_show["description"] }}</div>
+    {% else %}
+      <p class="mt-2 text-slate-600">Check here for the latest details on our next show or pop-up event.</p>
+    {% endif %}
+
     <div class="mt-6 rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
       <div class="grid gap-2 text-sm text-slate-700">
         {% if upcoming_show["date"] %}<div><span class="font-semibold">Date:</span> {{ upcoming_show["date"] }}</div>{% endif %}
         {% if upcoming_show["location_name"] %}<div><span class="font-semibold">Location:</span> {{ upcoming_show["location_name"] }}</div>{% endif %}
         {% if upcoming_show["benefiting"] %}<div><span class="font-semibold">Benefiting:</span> {{ upcoming_show["benefiting"] }}</div>{% endif %}
       </div>
+
       <div class="mt-6 flex flex-wrap gap-3">
         <a class="btn btn-primary" href="{{ url_for('show_page', slug=upcoming_show['slug']) }}">View Show Page</a>
-        <a class="btn btn-outline" href="{{ url_for('sponsorship.public_sponsorship_page', show_slug=upcoming_show['slug']) }}">Sponsor This Show</a>
+        {% if sponsorship_allowed(upcoming_show) %}
+          <a class="btn btn-outline" href="{{ url_for('sponsorship.public_sponsorship_page', show_slug=upcoming_show['slug']) }}">Sponsor This Show</a>
+        {% endif %}
       </div>
     </div>
   {% else %}
