@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set title = "Vendor Capacity Recommendations" %}
+
+{% block content %}
+<div class="mx-auto max-w-5xl space-y-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div class="text-xs font-semibold text-slate-500">CAPACITY TOOL</div>
+      <h1 class="mt-1 text-3xl font-semibold">Vendor Recommendations</h1>
+      <p class="mt-2 text-slate-600">{{ show.title }}</p>
+    </div>
+    <a class="btn btn-outline" href="{{ url_for('admin_show_vendors', show_id=show.id) }}">Vendor Setup</a>
+  </div>
+
+  <form method="get" class="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 md:grid-cols-3">
+    <input name="vehicles" value="{{ values.vehicles }}" class="rounded-lg border border-slate-200 px-4 py-3" placeholder="Expected vehicles">
+    <input name="spectators" value="{{ values.spectators }}" class="rounded-lg border border-slate-200 px-4 py-3" placeholder="Expected spectators">
+    <input name="physical_spaces" value="{{ values.physical_spaces }}" class="rounded-lg border border-slate-200 px-4 py-3" placeholder="Physical vendor spaces">
+    <input name="sponsor_spaces" value="{{ values.sponsor_spaces }}" class="rounded-lg border border-slate-200 px-4 py-3" placeholder="Sponsor spaces">
+    <input name="duration_hours" value="{{ values.duration_hours }}" class="rounded-lg border border-slate-200 px-4 py-3" placeholder="Event duration hours">
+    <select name="food" class="rounded-lg border border-slate-200 px-4 py-3"><option value="yes">Food vendors available</option><option value="no" {% if values.food == 'no' %}selected{% endif %}>No food vendors</option></select>
+    <button class="btn btn-primary md:col-span-3">Calculate Recommendations</button>
+  </form>
+
+  {% if recommendations %}
+  <section class="rounded-lg border border-slate-200 bg-white p-5">
+    <h2 class="text-xl font-semibold">Suggested categories</h2>
+    <p class="mt-2 text-sm text-slate-600">{{ recommendations.assumptions }}</p>
+    <div class="mt-4 grid gap-3 md:grid-cols-3">
+      {% for row in recommendations.rows %}
+      <div class="rounded-lg border border-slate-200 p-4">
+        <div class="font-semibold">{{ row.name }}</div>
+        <div class="mt-1 text-sm text-slate-600">{{ row.description }}</div>
+        <div class="mt-3 text-sm">Capacity: <span class="font-semibold">{{ row.capacity }}</span></div>
+        <div class="text-sm">Fee: <span class="font-semibold">${{ row.price }}</span></div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="mt-4 text-sm text-slate-600">Use these as a starting point. Manual values on the Vendor Setup page remain authoritative.</p>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

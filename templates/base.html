@@ -47,9 +47,11 @@
           {% if sponsorship_allowed(active_show) %}
             <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('sponsorship.public_sponsorship_page', show_slug=active_show['slug']) }}">Sponsor</a>
           {% endif %}
+          <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('vendor_registration_page', show_slug=active_show['slug']) }}">Vendors</a>
         {% endif %}
         <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('events') }}">Upcoming</a>
         <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('contact_page') }}">Contact</a>
+        <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('organizer_portal') }}">Organizers</a>
         {% if is_admin %}
           <a class="px-3 py-2 rounded-xl hover:bg-slate-100" href="{{ url_for('admin_page') }}">Admin</a>
         {% endif %}

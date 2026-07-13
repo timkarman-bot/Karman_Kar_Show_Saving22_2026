@@ -30,7 +30,18 @@
       {% if (show["voting_mode"] if "voting_mode" in show.keys() else "") == "none" %}
         <div><span class="font-semibold">Voting:</span> Not enabled for this event</div>
       {% endif %}
+      {% if "public_contact_email" in show.keys() and (show["public_contact_name"] or show["public_contact_email"] or show["public_contact_phone"]) %}
+        <div><span class="font-semibold">Contact:</span> {{ show["public_contact_name"] }} {% if show["public_contact_email"] %}{{ show["public_contact_email"] }}{% endif %} {% if show["public_contact_phone"] %}{{ show["public_contact_phone"] }}{% endif %}</div>
+      {% endif %}
     </div>
+
+    {% if "public_instructions" in show.keys() and (show["public_instructions"] or show["weather_policy"] or show["cancellation_policy"]) %}
+    <div class="mt-6 rounded-3xl border border-slate-200 bg-white/80 p-5 text-sm text-slate-700">
+      {% if show["public_instructions"] %}<div><span class="font-semibold">Public instructions:</span><div class="mt-1 whitespace-pre-line">{{ show["public_instructions"] }}</div></div>{% endif %}
+      {% if show["weather_policy"] %}<div class="mt-3"><span class="font-semibold">Weather:</span><div class="mt-1 whitespace-pre-line">{{ show["weather_policy"] }}</div></div>{% endif %}
+      {% if show["cancellation_policy"] %}<div class="mt-3"><span class="font-semibold">Cancellation:</span><div class="mt-1 whitespace-pre-line">{{ show["cancellation_policy"] }}</div></div>{% endif %}
+    </div>
+    {% endif %}
 
     {% if registration_slots %}
     <div class="mt-6 rounded-3xl border border-blue-100 bg-blue-50 p-5">
@@ -60,6 +71,7 @@
 
     <div class="mt-7 flex flex-wrap gap-3">
       {% if prereg_allowed(show) %}<a class="btn btn-primary" href="{{ url_for('register_page_for_show', show_slug=show['slug']) }}">Register your car</a>{% endif %}
+      <a class="btn btn-outline" href="{{ url_for('vendor_registration_page', show_slug=show['slug']) }}">Vendor registration</a>
       <a class="btn btn-outline" href="{{ url_for('events') }}">Upcoming events</a>
       {% if event_date_status and event_date_status["parsed"] %}<a class="btn btn-outline" href="{{ url_for('show_calendar', slug=show['slug']) }}">Add to calendar</a>{% endif %}
       {% if show["address"] and not show["hide_address"] %}<a class="btn btn-outline" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query={{ show['address']|urlencode }}">Open map</a>{% endif %}

@@ -36,7 +36,16 @@
           </div>
           {% endif %}
 
-          {% if show["registration_fee_cents"] %}
+          {% if pricing %}
+          <div>
+            <span class="font-semibold">Cars in checkout:</span>
+            {{ pricing.car_count }}
+          </div>
+          <div>
+            <span class="font-semibold">Total Registration Fee:</span>
+            ${{ '%.2f'|format(pricing.total_cents / 100) }}
+          </div>
+          {% elif show["registration_fee_cents"] %}
           <div>
             <span class="font-semibold">Registration Fee:</span>
             ${{ '%.2f'|format(show["registration_fee_cents"] / 100) }}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% set title = "Vendor Checkout" %}
+
+{% block content %}
+<div class="mx-auto max-w-3xl space-y-6">
+  <div>
+    <div class="text-xs font-semibold text-slate-500">VENDOR CHECKOUT</div>
+    <h1 class="mt-1 text-3xl font-semibold">{{ registration.business_name }}</h1>
+    <p class="mt-2 text-slate-600">{{ show["title"] }} · {{ registration.package_name }}</p>
+  </div>
+  <section class="rounded-lg border border-slate-200 bg-white p-6">
+    <div class="text-sm text-slate-500">Amount due</div>
+    <div class="mt-1 text-3xl font-semibold">${{ '%.2f'|format(registration.amount_cents / 100) }}</div>
+    <p class="mt-4 text-sm text-slate-600">Your vendor space is temporarily held while checkout is completed. The no-refund policy accepted on the previous page applies to this payment.</p>
+    <a class="btn btn-primary mt-5 inline-block" href="{{ checkout_url }}">Open Stripe Checkout</a>
+  </section>
+</div>
+{% endblock %}

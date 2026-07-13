@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% set title = "Vendor Confirmation" %}
+
+{% block content %}
+<div class="mx-auto max-w-4xl space-y-6">
+  <div>
+    <div class="text-xs font-semibold text-slate-500">VENDOR CONFIRMATION</div>
+    <h1 class="mt-1 text-3xl font-semibold">{{ "Confirmed" if registration.status == "confirmed" else registration.status|title }}</h1>
+    <p class="mt-2 text-slate-600">{{ show["title"] }} · {{ show["date"] }}</p>
+  </div>
+  <section class="rounded-lg border border-slate-200 bg-white p-6">
+    <div class="grid gap-4 md:grid-cols-2">
+      <div><div class="text-sm text-slate-500">Confirmation</div><div class="font-semibold">{{ registration.confirmation_number }}</div></div>
+      <div><div class="text-sm text-slate-500">Status</div><div class="font-semibold">{{ registration.status|title }} / {{ registration.payment_status|title }}</div></div>
+      <div><div class="text-sm text-slate-500">Business</div><div class="font-semibold">{{ registration.business_name }}</div></div>
+      <div><div class="text-sm text-slate-500">Category</div><div class="font-semibold">{{ registration.package_name }}</div></div>
+      <div><div class="text-sm text-slate-500">Amount</div><div class="font-semibold">${{ '%.2f'|format(registration.amount_cents / 100) }}</div></div>
+      <div><div class="text-sm text-slate-500">Setup and space assignment</div><div class="font-semibold">Will be sent later</div></div>
+    </div>
+  </section>
+  <section class="rounded-lg border border-slate-200 bg-white p-6">
+    <h2 class="text-lg font-semibold">No-refund policy</h2>
+    <p class="mt-3 whitespace-pre-line text-sm text-slate-700">{{ registration.accepted_policy_text }}</p>
+    <p class="mt-3 text-xs text-slate-500">Accepted {{ registration.accepted_at }} · {{ registration.accepted_policy_version }}</p>
+  </section>
+</div>
+{% endblock %}

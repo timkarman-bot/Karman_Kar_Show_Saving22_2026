@@ -55,6 +55,9 @@
       <a class="btn btn-primary" href="{{ url_for('admin_command_center') }}">Command Center</a>
       <a class="btn btn-outline" href="{{ url_for('admin_car_search') }}">Search Cars / Owners</a>
       <a class="btn btn-outline" href="{{ url_for('admin_shows') }}">Manage Shows</a>
+      {% if show %}
+      <a class="btn btn-outline" href="{{ url_for('admin_show_vendors', show_id=show['id']) }}">Vendors</a>
+      {% endif %}
       {% if admin_is_super %}
         <a class="btn btn-outline" href="{{ url_for('admin_users') }}">Admin Users</a>
       {% endif %}

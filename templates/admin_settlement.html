@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% set title = "Settlement Import" %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-8">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div class="text-xs font-semibold tracking-wide text-slate-500">ADMIN</div>
+      <h1 class="mt-1 text-3xl font-semibold">Settlement Import</h1>
+      <p class="mt-2 max-w-3xl text-slate-600">
+        Upload a Stripe CSV export, review how transactions are classified, then export a settlement workbook for charity reporting.
+      </p>
+    </div>
+    <a class="btn btn-outline" href="{{ url_for('admin_page') }}">Back to Admin</a>
+  </div>
+
+  <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-xl font-semibold">Event Setup</h2>
+    <form method="POST" action="{{ url_for('admin_settlement_preview') }}" enctype="multipart/form-data" class="mt-5 grid gap-4 md:grid-cols-3">
+      <div>
+        <label class="text-sm font-semibold">Event Name</label>
+        <input name="event_name" value="{{ event_payload.event_name }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+      <div>
+        <label class="text-sm font-semibold">Event Date</label>
+        <input name="event_date" value="{{ event_payload.event_date }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+      <div>
+        <label class="text-sm font-semibold">Charity</label>
+        <input name="charity_name" value="{{ event_payload.charity_name }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+      <div>
+        <label class="text-sm font-semibold">Promoter Share %</label>
+        <input name="promoter_share" value="{{ '%.0f'|format((event_payload.promoter_share or 0.7) * 100) }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+      <div>
+        <label class="text-sm font-semibold">Charity Share %</label>
+        <input name="charity_share" value="{{ '%.0f'|format((event_payload.charity_share or 0.3) * 100) }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+      <div>
+        <label class="text-sm font-semibold">Voting Admin Fee %</label>
+        <input name="voting_admin_fee" value="{{ '%.0f'|format((event_payload.voting_admin_fee or 0.1) * 100) }}" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+      <div class="md:col-span-2">
+        <label class="text-sm font-semibold">Stripe CSV Export</label>
+        <input type="file" name="stripe_csv" accept=".csv,text/csv" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+      </div>
+      <div class="flex items-end">
+        <button type="submit" class="btn btn-primary w-full">Preview Import</button>
+      </div>
+    </form>
+  </section>
+
+  {% if parsed %}
+  <section class="rounded-3xl border border-emerald-200 bg-emerald-50 p-6">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <div class="text-xs font-semibold tracking-wide text-emerald-700">IMPORT PREVIEW</div>
+        <h2 class="mt-1 text-2xl font-semibold text-slate-900">{{ parsed.row_count }} Stripe rows parsed</h2>
+        <p class="mt-1 text-sm text-emerald-900">{{ parsed.filename }}</p>
+      </div>
+      <form method="POST" action="{{ url_for('admin_settlement_export_xlsx') }}">
+        <input type="hidden" name="import_id" value="{{ parsed.import_id }}">
+        <input type="hidden" name="event_name" value="{{ event_payload.event_name }}">
+        <input type="hidden" name="event_date" value="{{ event_payload.event_date }}">
+        <input type="hidden" name="charity_name" value="{{ event_payload.charity_name }}">
+        <input type="hidden" name="promoter_share" value="{{ '%.0f'|format((event_payload.promoter_share or 0.7) * 100) }}">
+        <input type="hidden" name="charity_share" value="{{ '%.0f'|format((event_payload.charity_share or 0.3) * 100) }}">
+        <input type="hidden" name="voting_admin_fee" value="{{ '%.0f'|format((event_payload.voting_admin_fee or 0.1) * 100) }}">
+        <button class="btn btn-primary" type="submit">Export Settlement Workbook</button>
+      </form>
+    </div>
+
+    <div class="mt-5 grid gap-4 md:grid-cols-4">
+      {% for label, row in parsed.summary.items() %}
+      <div class="rounded-2xl border border-emerald-200 bg-white p-4">
+        <div class="text-xs font-semibold text-slate-500">{{ label }}</div>
+        <div class="mt-2 text-2xl font-semibold">${{ '%.2f'|format(row.gross) }}</div>
+        <div class="mt-1 text-sm text-slate-600">{{ row.count }} rows | fees ${{ '%.2f'|format(row.fees) }} | net ${{ '%.2f'|format(row.net) }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if parsed.audit_flags %}
+  <section class="rounded-3xl border border-amber-200 bg-amber-50 p-6">
+    <h2 class="text-xl font-semibold text-slate-900">Needs Review</h2>
+    <div class="mt-4 grid gap-2 text-sm text-amber-900">
+      {% for flag in parsed.audit_flags[:20] %}
+        <div class="rounded-xl border border-amber-200 bg-white px-4 py-3">{{ flag }}</div>
+      {% endfor %}
+      {% if parsed.audit_flags|length > 20 %}
+        <div class="text-amber-800">{{ parsed.audit_flags|length - 20 }} more review items will be included in the workbook.</div>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-xl font-semibold">Transaction Mapping</h2>
+    <div class="mt-4 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-left text-slate-600">
+            <th class="py-2 pr-4">Date</th>
+            <th class="py-2 pr-4">Type</th>
+            <th class="py-2 pr-4">Gross</th>
+            <th class="py-2 pr-4">Fee</th>
+            <th class="py-2 pr-4">Net</th>
+            <th class="py-2 pr-4">Destination</th>
+            <th class="py-2 pr-4">Transaction</th>
+            <th class="py-2 pr-4">Audit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in parsed.records[:60] %}
+          <tr class="border-b border-slate-100 align-top">
+            <td class="py-3 pr-4 whitespace-nowrap">{{ row.date }}</td>
+            <td class="py-3 pr-4 font-medium">{{ row.payment_type }}</td>
+            <td class="py-3 pr-4">${{ '%.2f'|format(row.gross) }}</td>
+            <td class="py-3 pr-4">${{ '%.2f'|format(row.fee) }}</td>
+            <td class="py-3 pr-4">${{ '%.2f'|format(row.net) }}</td>
+            <td class="py-3 pr-4">{{ row.destination }}</td>
+            <td class="py-3 pr-4 text-xs break-all">{{ row.transaction_id }}</td>
+            <td class="py-3 pr-4 text-amber-700">{{ row.audit }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

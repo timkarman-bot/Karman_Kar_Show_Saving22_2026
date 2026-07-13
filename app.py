@@ -15,7 +15,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
-from typing import Dict, Optional, Any, Callable
+from typing import Dict, Optional, Any, Callable, List
 from zoneinfo import ZoneInfo
 from urllib.parse import urlencode, urlparse
 from werkzeug.utils import secure_filename
@@ -186,6 +186,48 @@ from sponsorship_system import (
     save_sponsorship_sale,
 )
 
+from settlement_tools import build_settlement_workbook, parse_stripe_csv
+from organizer_system import (
+    authenticate_organizer,
+    create_organizer,
+    create_organizer_show,
+    get_organizer,
+    get_organizer_show,
+    init_organizer_tables,
+    list_organizer_shows,
+    list_platform_organizers,
+    list_platform_organizer_shows,
+    show_reference,
+    show_transaction_report,
+)
+from platform_operations import (
+    init_platform_operations,
+    list_show_categories,
+    parse_category_csv,
+    save_show_categories,
+    update_show_platform_pricing,
+    upsert_platform_payment_record,
+)
+from vendor_system import (
+    attach_vendor_checkout,
+    cleanup_expired_vendor_holds,
+    create_vendor_hold,
+    finalize_vendor_paid,
+    get_vendor_registration,
+    get_vendor_registration_by_token,
+    get_vendor_settings,
+    init_vendor_tables,
+    list_vendor_registrations,
+    package_availability,
+    save_vendor_packages,
+    save_vendor_settings,
+    set_vendor_status,
+    update_vendor_admin,
+    vendor_csv_bytes,
+    vendor_dashboard,
+    vendor_registration_open,
+)
+
 APP_ENV = os.getenv("APP_ENV", os.getenv("FLASK_ENV", "production")).strip().lower()
 IS_DEV = APP_ENV in {"dev", "development", "local", "test", "testing"}
 
@@ -223,6 +265,10 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
 STRIPE_CLIENT_ID = os.getenv("STRIPE_CLIENT_ID", "").strip()
 
 stripe.api_key = PLATFORM_STRIPE_SECRET_KEY
+try:
+    LOCAL_TZ = LOCAL_TZ
+except Exception:
+    LOCAL_TZ = timezone(timedelta(hours=-6), "America/Chicago")
 
 CATEGORY_SLUGS: Dict[str, str] = {
     "army": "Army",
@@ -259,6 +305,9 @@ DEFAULT_UPCOMING_EVENT = {
 
 init_db()
 ensure_default_show(DEFAULT_SHOW)
+init_organizer_tables(os.getenv("DB_PATH") or ("/data/app.db" if os.path.isdir("/data") else "app.db"))
+init_platform_operations(os.getenv("DB_PATH") or ("/data/app.db" if os.path.isdir("/data") else "app.db"))
+init_vendor_tables(os.getenv("DB_PATH") or ("/data/app.db" if os.path.isdir("/data") else "app.db"))
 
 CONSENT_TEXT_CAR_OWNER = (
     "By submitting this form, you agree Karman Kar Shows & Events may contact you about this event and future events "
@@ -323,7 +372,7 @@ def _event_date_status(show: Any) -> Dict[str, Any]:
     return {
         "parsed": True,
         "date": parsed.isoformat(),
-        "is_past": parsed < datetime.now(ZoneInfo("America/Chicago")).date(),
+        "is_past": parsed < datetime.now(LOCAL_TZ).date(),
         "weekday_mismatch": mismatch,
         "expected_weekday": expected_weekday,
         "message": f"Configured weekday should be {expected_weekday}." if mismatch else "",
@@ -367,6 +416,22 @@ def _parse_dollars_to_cents(value: str, default_cents: int = 0) -> int:
         return max(0, int(round(float((value or "").strip()) * 100)))
     except Exception:
         return default_cents
+
+
+def _parse_optional_datetime(value: str) -> Optional[datetime]:
+    text = (value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            pass
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
 
 def _slot_payloads_from_request() -> list[dict[str, Any]]:
     """Parse up to five registration day/session slots from the admin show form."""
@@ -467,6 +532,107 @@ def _show_payment_mode(show: Any) -> str:
     value = (show["payment_mode"] if "payment_mode" in show.keys() else "stripe") or "stripe"
     value = str(value).strip().lower()
     return value if value in {"stripe", "external", "none"} else "stripe"
+
+
+def _show_payment_reference(show: Any) -> str:
+    try:
+        value = (show["payment_reference"] or "").strip()
+    except Exception:
+        value = ""
+    return value or show_reference(int(show["id"]))
+
+
+def _stripe_payment_fields(show: Any, item_type: str, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    reference = _show_payment_reference(show)
+    try:
+        organizer_id = str(show["organizer_id"] or "")
+        platform_fee_percent = str(float(show["platform_fee_percent"] or 0))
+        processing_fee_percent = str(float(show["processing_fee_percent"] or 0))
+        processing_fee_fixed_cents = str(int(show["processing_fee_fixed_cents"] or 0))
+        collection_mode = (show["payment_collection_mode"] or "platform").strip()
+    except Exception:
+        organizer_id = ""
+        platform_fee_percent = "0"
+        processing_fee_percent = "0"
+        processing_fee_fixed_cents = "0"
+        collection_mode = "platform"
+    metadata = {
+        "payment_item_type": item_type,
+        "show_id": str(show["id"]),
+        "show_slug": show["slug"],
+        "show_reference": reference,
+        "organizer_id": organizer_id,
+        "collection_mode": collection_mode,
+        "platform_fee_percent": platform_fee_percent,
+        "processing_fee_percent": processing_fee_percent,
+        "processing_fee_fixed_cents": processing_fee_fixed_cents,
+    }
+    for key, value in (extra or {}).items():
+        metadata[str(key)] = str(value)
+    description = f"{reference} | {show['title']} | {item_type.replace('_', ' ').title()}"
+    return {
+        "client_reference_id": f"{reference}:{item_type}"[:200],
+        "metadata": metadata,
+        "payment_intent_data": {
+            "description": description[:500],
+            "metadata": metadata,
+        },
+    }
+
+
+def _stripe_value(obj: Any, key: str, default: Any = None) -> Any:
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _sync_actual_stripe_fee(checkout_session_id: str) -> Dict[str, Any]:
+    _require_platform_stripe()
+    checkout = stripe.checkout.Session.retrieve(checkout_session_id)
+    metadata = _stripe_value(checkout, "metadata", {}) or {}
+    show_id = int(metadata.get("show_id", "0") or 0)
+    if not show_id:
+        raise ValueError("Stripe checkout is missing show_id metadata.")
+    payment_intent_ref = _stripe_value(checkout, "payment_intent", "")
+    payment_intent_id = _stripe_value(payment_intent_ref, "id", payment_intent_ref) or ""
+    if not payment_intent_id:
+        raise ValueError("Stripe checkout has no payment intent yet.")
+    payment_intent = stripe.PaymentIntent.retrieve(
+        payment_intent_id,
+        expand=["latest_charge.balance_transaction"],
+    )
+    charge_ref = _stripe_value(payment_intent, "latest_charge")
+    if not charge_ref:
+        raise ValueError("Stripe payment intent has no charge yet.")
+    charge = charge_ref
+    if isinstance(charge_ref, str):
+        charge = stripe.Charge.retrieve(charge_ref, expand=["balance_transaction"])
+    balance_ref = _stripe_value(charge, "balance_transaction")
+    if not balance_ref:
+        raise ValueError("Stripe charge has no balance transaction yet.")
+    balance = balance_ref if not isinstance(balance_ref, str) else stripe.BalanceTransaction.retrieve(balance_ref)
+    balance_id = _stripe_value(balance, "id", balance_ref if isinstance(balance_ref, str) else "")
+    gross_cents = int(_stripe_value(checkout, "amount_total", 0) or _stripe_value(balance, "amount", 0) or 0)
+    processing_fee_cents = int(_stripe_value(balance, "fee", 0) or 0)
+    net_cents = int(_stripe_value(balance, "net", gross_cents - processing_fee_cents) or 0)
+    organizer_raw = metadata.get("organizer_id", "")
+    upsert_platform_payment_record(
+        _db_path(),
+        {
+            "show_id": show_id,
+            "organizer_id": int(organizer_raw) if str(organizer_raw).isdigit() else None,
+            "item_type": metadata.get("payment_item_type", "payment"),
+            "checkout_session_id": checkout_session_id,
+            "payment_intent_id": payment_intent_id,
+            "balance_transaction_id": balance_id,
+            "gross_amount_cents": gross_cents,
+            "processing_fee_cents": processing_fee_cents,
+            "net_amount_cents": net_cents,
+        },
+    )
+    return {"show_id": show_id, "fee_cents": processing_fee_cents, "balance_transaction_id": balance_id}
 
 
 def _show_voting_mode(show: Any) -> str:
@@ -615,7 +781,7 @@ def _save_uploaded_flyer(file_storage, slug: str) -> str:
 
     original = secure_filename(file_storage.filename)
     ext = original.rsplit(".", 1)[1].lower()
-    stamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%d-%H%M%S")
     safe_slug = secure_filename(slug or "show") or "show"
     filename = f"{safe_slug}-{stamp}.{ext}"
 
@@ -892,7 +1058,7 @@ def _save_waiver_capture_html(
     ip_address: str,
     user_agent: str,
 ) -> str:
-    now_local = datetime.now(ZoneInfo("America/Chicago"))
+    now_local = datetime.now(LOCAL_TZ)
     now_utc = datetime.now(timezone.utc)
     ts = now_local.strftime("%Y%m%d-%H%M%S")
     safe_token = "".join(ch for ch in intent_token if ch.isalnum())[:12] or "na"
@@ -968,7 +1134,7 @@ def _record_waiver_evidence(
     intent_token: str,
     html_path: str,
 ) -> None:
-    now_local = datetime.now(ZoneInfo("America/Chicago")).isoformat()
+    now_local = datetime.now(LOCAL_TZ).isoformat()
     now_utc = datetime.now(timezone.utc).isoformat()
     create_waiver_evidence_record(
         show_id=int(show["id"]),
@@ -1348,8 +1514,8 @@ def _maybe_auto_close_voting() -> None:
     if not show or int(show["voting_open"]) != 1:
         return
     try:
-        end_dt = datetime.strptime(end_raw, "%Y-%m-%d %H:%M").replace(tzinfo=ZoneInfo("America/Chicago"))
-        if datetime.now(ZoneInfo("America/Chicago")) >= end_dt:
+        end_dt = datetime.strptime(end_raw, "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TZ)
+        if datetime.now(LOCAL_TZ) >= end_dt:
             set_show_voting_open(int(show["id"]), False)
     except Exception:
         return
@@ -1365,7 +1531,7 @@ def _save_sponsor_logo_upload(file_storage) -> str:
         return ""
     upload_dir = Path(app.static_folder) / "img" / "sponsors" / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%d-%H%M%S")
     final_name = f"sponsor-{stamp}-{filename}"
     out_path = upload_dir / final_name
     file_storage.save(out_path)
@@ -3258,6 +3424,503 @@ def admin_version():
     })
 
 
+def require_organizer(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        if not session.get("organizer_id"):
+            return redirect(url_for("organizer_portal", next=request.path))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+
+def _current_organizer() -> Optional[Dict[str, Any]]:
+    organizer_id = session.get("organizer_id")
+    return get_organizer(_db_path(), int(organizer_id)) if organizer_id else None
+
+
+@app.get("/organizer")
+def organizer_portal():
+    organizer = _current_organizer()
+    if organizer:
+        return redirect(url_for("organizer_dashboard"))
+    return render_template("organizer_portal.html", next=request.args.get("next", ""))
+
+
+@app.post("/organizer/signup")
+@rate_limit("organizer_signup", 8, 900)
+def organizer_signup():
+    organization_name = request.form.get("organization_name", "").strip()
+    contact_name = request.form.get("contact_name", "").strip()
+    email = request.form.get("email", "").strip().lower()
+    phone = request.form.get("phone", "").strip()
+    password = request.form.get("password", "")
+    if not organization_name or not contact_name or "@" not in email or len(password) < 10:
+        flash("Complete every required field and use a password of at least 10 characters.", "error")
+        return redirect(url_for("organizer_portal"))
+    try:
+        organizer_id = create_organizer(
+            _db_path(),
+            organization_name=organization_name,
+            contact_name=contact_name,
+            email=email,
+            phone=phone,
+            password=password,
+        )
+    except sqlite3.IntegrityError:
+        flash("An organizer account already exists for that email address.", "error")
+        return redirect(url_for("organizer_portal"))
+    session["organizer_id"] = organizer_id
+    _log_event("organizer.signup", details={"organizer_id": organizer_id}, actor_type="organizer")
+    return redirect(url_for("organizer_dashboard"))
+
+
+@app.post("/organizer/login")
+@rate_limit("organizer_login", 10, 900)
+def organizer_login():
+    organizer = authenticate_organizer(
+        _db_path(),
+        request.form.get("email", ""),
+        request.form.get("password", ""),
+    )
+    if not organizer:
+        flash("Email or password was not recognized.", "error")
+        return redirect(url_for("organizer_portal"))
+    session["organizer_id"] = int(organizer["id"])
+    return redirect(request.form.get("next", "") or url_for("organizer_dashboard"))
+
+
+@app.post("/organizer/logout")
+@require_organizer
+def organizer_logout():
+    session.pop("organizer_id", None)
+    return redirect(url_for("organizer_portal"))
+
+
+@app.get("/organizer/dashboard")
+@require_organizer
+def organizer_dashboard():
+    organizer = _current_organizer()
+    shows = list_organizer_shows(_db_path(), int(organizer["id"]))
+    return render_template("organizer_dashboard.html", organizer=organizer, shows=shows)
+
+
+def _category_rows_from_request() -> list[dict[str, Any]]:
+    upload = request.files.get("category_csv")
+    if upload and upload.filename:
+        return parse_category_csv(upload.read())
+    rows = []
+    for idx, line in enumerate(request.form.get("categories_text", "").splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        parts = [part.strip() for part in line.split(",", 1)]
+        if len(parts) == 2:
+            slug, name = parts
+        else:
+            slug, name = "", parts[0]
+        rows.append({"slug": slug, "name": name, "sort_order": idx * 10})
+    return rows
+
+
+def _vendor_form_from_request() -> Dict[str, Any]:
+    return {
+        "package_id": request.form.get("package_id", "").strip(),
+        "business_name": request.form.get("business_name", "").strip(),
+        "contact_name": request.form.get("contact_name", "").strip(),
+        "email": request.form.get("email", "").strip(),
+        "phone": request.form.get("phone", "").strip(),
+        "website_url": request.form.get("website_url", "").strip(),
+        "products": request.form.get("products", "").strip(),
+        "electricity_request": request.form.get("electricity_request") == "on",
+        "special_space_request": request.form.get("special_space_request", "").strip(),
+        "is_food_vendor": request.form.get("is_food_vendor") == "on",
+        "food_details": request.form.get("food_details", "").strip(),
+        "insurance_ack": request.form.get("insurance_ack") == "on",
+        "rules_accepted": request.form.get("rules_accepted") == "on",
+        "refund_accepted": request.form.get("refund_accepted") == "on",
+    }
+
+
+def _validate_vendor_form(data: Dict[str, Any]) -> List[str]:
+    errors = []
+    if not data["package_id"].isdigit():
+        errors.append("Select an available vendor category.")
+    if not data["business_name"]:
+        errors.append("Business name is required.")
+    if not data["contact_name"]:
+        errors.append("Contact name is required.")
+    if "@" not in data["email"] or "." not in data["email"].split("@")[-1]:
+        errors.append("Enter a valid email address.")
+    if data["website_url"]:
+        parsed = urlparse(data["website_url"])
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            errors.append("Website or social URL must start with http:// or https://.")
+    if not data["products"]:
+        errors.append("Describe the products or services offered.")
+    if not data["rules_accepted"]:
+        errors.append("Vendor rules must be accepted before payment.")
+    if not data["refund_accepted"]:
+        errors.append("No-refund policy must be accepted before payment.")
+    return errors
+
+
+@app.route("/shows/<show_slug>/vendors", methods=["GET", "POST"])
+def vendor_registration_page(show_slug: str):
+    cleanup_expired_vendor_holds(_db_path())
+    show = get_show_by_slug(show_slug)
+    if not show:
+        abort(404)
+    availability = vendor_registration_open(_db_path(), int(show["id"]))
+    form_data = _vendor_form_from_request() if request.method == "POST" else {}
+    errors: List[str] = []
+    if request.method == "POST":
+        errors = _validate_vendor_form(form_data)
+        if not errors:
+            try:
+                reg = create_vendor_hold(
+                    _db_path(),
+                    int(show["id"]),
+                    int(form_data["package_id"]),
+                    form_data,
+                    availability["settings"].get("vendor_agreement") or "Vendor payments are non-refundable once confirmed.",
+                    availability["settings"].get("vendor_policy_version") or "vendor-policy-2026-07",
+                )
+            except ValueError as exc:
+                errors.append(str(exc))
+            else:
+                if int(reg.get("amount_cents") or 0) <= 0:
+                    attach_vendor_checkout(_db_path(), int(reg["id"]), f"free_vendor_{reg['hold_token']}")
+                    finalize_vendor_paid(_db_path(), f"free_vendor_{reg['hold_token']}", amount_cents=0)
+                    return redirect(url_for("vendor_confirmation", show_slug=show_slug, hold_token=reg["hold_token"]))
+                if not PLATFORM_STRIPE_SECRET_KEY:
+                    flash("Vendor hold created. Stripe test key is not configured in this sandbox, so checkout cannot open yet.", "error")
+                    return redirect(url_for("vendor_confirmation", show_slug=show_slug, hold_token=reg["hold_token"]))
+                _require_platform_stripe()
+                success_url = _abs_url(url_for("vendor_confirmation", show_slug=show_slug, hold_token=reg["hold_token"])) + "?session_id={CHECKOUT_SESSION_ID}"
+                cancel_url = _abs_url(url_for("vendor_registration_page", show_slug=show_slug))
+                session_obj = stripe.checkout.Session.create(
+                    mode="payment",
+                    payment_method_types=["card"],
+                    line_items=[{
+                        "price_data": {
+                            "currency": "usd",
+                            "unit_amount": int(reg["amount_cents"]),
+                            "product_data": {"name": f"Vendor - {show['title']} - {reg['package_name']}"},
+                        },
+                        "quantity": 1,
+                    }],
+                    success_url=success_url,
+                    cancel_url=cancel_url,
+                    **_stripe_payment_fields(show, "vendor", {
+                        "vendor_registration_id": str(reg["id"]),
+                        "vendor_confirmation_number": reg["confirmation_number"],
+                        "vendor_package_id": str(reg["package_id"]),
+                    }),
+                )
+                attach_vendor_checkout(_db_path(), int(reg["id"]), session_obj.id)
+                return render_template("vendor_checkout.html", show=show, registration=reg, checkout_url=session_obj.url)
+    return render_template(
+        "vendor_registration.html",
+        show=show,
+        availability=availability,
+        packages=[package for package in availability["packages"] if int(package.get("is_active") or 0) == 1],
+        settings=availability["settings"],
+        errors=errors,
+        form_data=form_data,
+    )
+
+
+@app.get("/shows/<show_slug>/vendors/confirmation/<hold_token>")
+def vendor_confirmation(show_slug: str, hold_token: str):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        abort(404)
+    reg = get_vendor_registration_by_token(_db_path(), hold_token)
+    if not reg or int(reg["show_id"]) != int(show["id"]):
+        abort(404)
+    session_id = request.args.get("session_id", "").strip()
+    if session_id and session_id == reg.get("checkout_session_id") and reg.get("payment_status") != "paid":
+        try:
+            sess = stripe.checkout.Session.retrieve(session_id) if PLATFORM_STRIPE_SECRET_KEY else None
+            if sess and sess.payment_status == "paid":
+                finalize_vendor_paid(_db_path(), session_id, getattr(sess, "payment_intent", "") or "", int(getattr(sess, "amount_total", 0) or 0))
+                reg = get_vendor_registration_by_token(_db_path(), hold_token) or reg
+        except Exception as exc:
+            _log_event("vendor.confirmation_payment_check_failed", int(show["id"]), {"error": str(exc)}, actor_type="public")
+    return render_template("vendor_confirmation.html", show=show, registration=reg)
+
+
+@app.route("/admin/shows/<int:show_id>/categories", methods=["GET", "POST"])
+@require_admin
+def admin_show_categories(show_id: int):
+    _require_show_access(show_id)
+    show = get_show_by_id(show_id)
+    if not show:
+        abort(404)
+    if request.method == "POST":
+        rows = _category_rows_from_request()
+        if not rows:
+            flash("Enter at least one category or upload a category CSV.", "error")
+        else:
+            count = save_show_categories(_db_path(), show_id, rows)
+            flash(f"Saved {count} voting categories.", "ok")
+        return redirect(url_for("admin_show_categories", show_id=show_id))
+    categories = list_show_categories(_db_path(), show_id, active_only=False)
+    return render_template("show_categories.html", show=dict(show), categories=categories, organizer=None, admin_mode=True)
+
+
+@app.route("/admin/shows/<int:show_id>/vendors", methods=["GET", "POST"])
+@require_admin
+def admin_show_vendors(show_id: int):
+    _require_show_access(show_id)
+    show = get_show_by_id(show_id)
+    if not show:
+        abort(404)
+    if request.method == "POST":
+        errors: List[str] = []
+        open_raw = request.form.get("vendor_open_at", "").strip()
+        deadline_raw = request.form.get("vendor_deadline", "").strip()
+        open_dt = _parse_optional_datetime(open_raw)
+        deadline_dt = _parse_optional_datetime(deadline_raw)
+        if open_raw and not open_dt:
+            errors.append("Opening date must be a valid date and time.")
+        if deadline_raw and not deadline_dt:
+            errors.append("Closing date must be a valid date and time.")
+        if open_dt and deadline_dt and deadline_dt <= open_dt:
+            errors.append("Closing date must be after the opening date.")
+
+        overall_raw = (request.form.get("vendor_overall_max") or "").strip()
+        overall_max = None
+        if overall_raw:
+            if overall_raw.isdigit() and int(overall_raw) > 0:
+                overall_max = int(overall_raw)
+            else:
+                errors.append("Overall vendor maximum must be a positive whole number.")
+
+        reserved_raw = (request.form.get("vendor_reserved_sponsor_spaces") or "0").strip()
+        reserved_spaces = 0
+        if reserved_raw:
+            if reserved_raw.isdigit():
+                reserved_spaces = int(reserved_raw)
+            else:
+                errors.append("Sponsor-reserved spaces must be a non-negative whole number.")
+
+        package_rows = []
+        for idx in range(1, 9):
+            capacity_raw = (request.form.get(f"package_{idx}_capacity") or "").strip()
+            capacity = None
+            if capacity_raw:
+                if capacity_raw.isdigit():
+                    capacity = int(capacity_raw)
+                else:
+                    errors.append(f"Package {idx} capacity must be a non-negative whole number.")
+            package_reserved_raw = (request.form.get(f"package_{idx}_reserved_sponsor_spaces") or "0").strip()
+            package_reserved = 0
+            if package_reserved_raw:
+                if package_reserved_raw.isdigit():
+                    package_reserved = int(package_reserved_raw)
+                else:
+                    errors.append(f"Package {idx} reserved sponsor spaces must be a non-negative whole number.")
+            package_rows.append(
+                {
+                    "id": request.form.get(f"package_{idx}_id", ""),
+                    "name": request.form.get(f"package_{idx}_name", ""),
+                    "description": request.form.get(f"package_{idx}_description", ""),
+                    "price_cents": _parse_dollars_to_cents(request.form.get(f"package_{idx}_price", "0")),
+                    "capacity": capacity,
+                    "reserved_sponsor_spaces": package_reserved,
+                    "is_food": request.form.get(f"package_{idx}_is_food") == "on",
+                    "is_closed": request.form.get(f"package_{idx}_is_closed") == "on",
+                    "sort_order": idx * 10,
+                    "is_active": request.form.get(f"package_{idx}_is_active") == "on",
+                }
+            )
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return redirect(url_for("admin_show_vendors", show_id=show_id))
+
+        save_vendor_settings(
+            _db_path(),
+            show_id,
+            {
+                "vendors_enabled": request.form.get("vendors_enabled") == "on",
+                "vendor_public_status": request.form.get("vendor_public_status", "draft"),
+                "vendor_headline": request.form.get("vendor_headline", ""),
+                "vendor_instructions": request.form.get("vendor_instructions", ""),
+                "vendor_agreement": request.form.get("vendor_agreement", ""),
+                "vendor_policy_version": request.form.get("vendor_policy_version", ""),
+                "vendor_open_at": open_raw,
+                "vendor_deadline": deadline_raw,
+                "vendor_overall_max": overall_max,
+                "vendor_reserved_sponsor_spaces": reserved_spaces,
+                "food_vendors_enabled": request.form.get("food_vendors_enabled") == "on",
+            },
+        )
+        count = save_vendor_packages(_db_path(), show_id, package_rows)
+        _log_event(
+            "admin.vendor_settings_saved",
+            show_id,
+            {"package_count": count, "vendor_status": request.form.get("vendor_public_status", "draft")},
+            actor_type="admin",
+        )
+        flash(f"Vendor setup saved with {count} booth/package options.", "ok")
+        return redirect(url_for("admin_show_vendors", show_id=show_id))
+    return render_template(
+        "admin_show_vendors.html",
+        show=dict(show),
+        settings=get_vendor_settings(_db_path(), show_id),
+        packages=package_availability(_db_path(), show_id),
+        dashboard=vendor_dashboard(_db_path(), show_id),
+    )
+
+
+@app.get("/admin/shows/<int:show_id>/vendors/registrations")
+@require_admin
+def admin_vendor_registrations(show_id: int):
+    _require_show_access(show_id)
+    show = get_show_by_id(show_id)
+    if not show:
+        abort(404)
+    cleanup_expired_vendor_holds(_db_path())
+    rows = list_vendor_registrations(
+        _db_path(),
+        show_id,
+        query=request.args.get("q", "").strip(),
+        status=request.args.get("status", "").strip(),
+        package_id=request.args.get("package_id", "").strip(),
+    )
+    return render_template(
+        "admin_vendor_registrations.html",
+        show=dict(show),
+        rows=rows,
+        dashboard=vendor_dashboard(_db_path(), show_id),
+        packages=package_availability(_db_path(), show_id),
+        filters=request.args,
+    )
+
+
+@app.get("/admin/shows/<int:show_id>/vendors/export.csv")
+@require_admin
+def admin_vendor_export_csv(show_id: int):
+    _require_show_access(show_id)
+    rows = list_vendor_registrations(_db_path(), show_id)
+    return send_file(
+        io.BytesIO(vendor_csv_bytes(rows)),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=f"show-{show_id}-vendors.csv",
+    )
+
+
+@app.get("/admin/shows/<int:show_id>/vendors/roster")
+@require_admin
+def admin_vendor_roster(show_id: int):
+    _require_show_access(show_id)
+    show = get_show_by_id(show_id)
+    if not show:
+        abort(404)
+    rows = list_vendor_registrations(_db_path(), show_id)
+    return render_template("admin_vendor_roster.html", show=dict(show), rows=rows)
+
+
+@app.route("/admin/vendors/<int:registration_id>", methods=["GET", "POST"])
+@require_admin
+def admin_vendor_detail(registration_id: int):
+    reg = get_vendor_registration(_db_path(), registration_id)
+    if not reg:
+        abort(404)
+    _require_show_access(int(reg["show_id"]))
+    show = get_show_by_id(int(reg["show_id"]))
+    if request.method == "POST":
+        update_vendor_admin(_db_path(), registration_id, request.form)
+        flash("Vendor details updated.", "ok")
+        return redirect(url_for("admin_vendor_detail", registration_id=registration_id))
+    return render_template("admin_vendor_detail.html", show=dict(show), registration=reg)
+
+
+@app.post("/admin/vendors/<int:registration_id>/check-in")
+@require_admin
+def admin_vendor_check_in(registration_id: int):
+    reg = get_vendor_registration(_db_path(), registration_id)
+    if not reg:
+        abort(404)
+    _require_show_access(int(reg["show_id"]))
+    set_vendor_status(_db_path(), registration_id, "checked_in")
+    flash("Vendor marked checked in.", "ok")
+    return redirect(url_for("admin_vendor_detail", registration_id=registration_id))
+
+
+@app.post("/admin/vendors/<int:registration_id>/cancel")
+@require_admin
+def admin_vendor_cancel(registration_id: int):
+    reg = get_vendor_registration(_db_path(), registration_id)
+    if not reg:
+        abort(404)
+    _require_show_access(int(reg["show_id"]))
+    set_vendor_status(_db_path(), registration_id, "canceled", release_slot=request.form.get("release_slot") == "on")
+    flash("Vendor canceled. No refund was issued automatically.", "ok")
+    return redirect(url_for("admin_vendor_detail", registration_id=registration_id))
+
+
+@app.get("/admin/shows/<int:show_id>/vendors/recommend")
+@require_admin
+def admin_vendor_recommendations(show_id: int):
+    _require_show_access(show_id)
+    show = get_show_by_id(show_id)
+    if not show:
+        abort(404)
+    values = {k: request.args.get(k, "").strip() for k in ("vehicles", "spectators", "physical_spaces", "sponsor_spaces", "duration_hours", "food")}
+    recommendations = None
+    if values["physical_spaces"]:
+        vehicles = int(values["vehicles"] or 0)
+        spectators = int(values["spectators"] or 0)
+        physical = max(0, int(values["physical_spaces"] or 0))
+        sponsor_spaces = max(0, int(values["sponsor_spaces"] or 0))
+        food_enabled = values["food"] != "no"
+        sellable = max(0, physical - sponsor_spaces)
+        base = min(sellable, max(3, round((vehicles / 25) + (spectators / 250))))
+        food_count = min(3, max(0, round(spectators / 500))) if food_enabled else 0
+        service = max(1, round(base * 0.35))
+        product = max(1, base - service - food_count)
+        recommendations = {
+            "sellable": sellable,
+            "rows": [
+                {"name": "Product Vendor", "capacity": product, "price": "50.00", "description": "Retail, crafts, merchandise, and display vendors."},
+                {"name": "Service Vendor", "capacity": service, "price": "50.00", "description": "Community, nonprofit, service, and information vendors."},
+            ],
+            "assumptions": f"Based on {vehicles} vehicles, {spectators} spectators, {physical} physical spaces, and {sponsor_spaces} sponsor-reserved spaces. Recommendations stay within the sellable capacity of {sellable}.",
+        }
+        if food_enabled:
+            recommendations["rows"].append({"name": "Food Vendor", "capacity": food_count, "price": "75.00", "description": "Food truck, snack, drink, or food service vendor."})
+    return render_template("admin_vendor_recommend.html", show=dict(show), values=values, recommendations=recommendations)
+
+
+@app.route("/admin/shows/<int:show_id>/platform-pricing", methods=["GET", "POST"])
+@require_admin
+def admin_show_platform_pricing(show_id: int):
+    _require_show_access(show_id)
+    show = get_show_by_id(show_id)
+    if not show:
+        abort(404)
+    if request.method == "POST":
+        try:
+            percent = float(request.form.get("platform_fee_percent", "10") or 10)
+        except ValueError:
+            percent = 10.0
+        update_show_platform_pricing(
+            _db_path(),
+            show_id,
+            platform_fee_percent=percent,
+            platform_event_fee_cents=_parse_dollars_to_cents(request.form.get("platform_event_fee", "0")),
+            platform_per_transaction_fee_cents=_parse_dollars_to_cents(request.form.get("platform_per_transaction_fee", "0")),
+        )
+        flash("Outside-show platform pricing updated.", "ok")
+        return redirect(url_for("admin_show_platform_pricing", show_id=show_id))
+    report = show_transaction_report(_db_path(), show_id)
+    return render_template("admin_show_platform_pricing.html", show=dict(show), report=report)
+
+
 @app.get("/admin")
 def admin_page():
     show = _admin_current_show() if session.get("admin_authed") else get_active_show()
@@ -4485,7 +5148,7 @@ def _list_saved_exports() -> list[dict]:
             rows.append({
                 "filename": p.name,
                 "size_bytes": p.stat().st_size,
-                "modified_at": datetime.fromtimestamp(p.stat().st_mtime, ZoneInfo("America/Chicago")).strftime("%Y-%m-%d %I:%M %p"),
+                "modified_at": datetime.fromtimestamp(p.stat().st_mtime, LOCAL_TZ).strftime("%Y-%m-%d %I:%M %p"),
             })
         except Exception:
             pass
@@ -4888,6 +5551,21 @@ def stripe_webhook():
                     finalize_vote_intent_paid(session_id)
                 elif item_type == "attendance_fee":
                     mark_donation_paid(session_id)
+                elif item_type == "vendor":
+                    finalize_vendor_paid(
+                        _db_path(),
+                        session_id,
+                        obj.get("payment_intent", "") or "",
+                        int(obj.get("amount_total", 0) or 0),
+                    )
+                try:
+                    _sync_actual_stripe_fee(session_id)
+                except Exception as fee_error:
+                    _log_event(
+                        "stripe.actual_fee_sync_deferred",
+                        int(metadata.get("show_id", "0") or 0) or None,
+                        {"session_id": session_id, "error": str(fee_error)},
+                    )
 
         if event_id:
             mark_webhook_event_processed(event_id, event_type)

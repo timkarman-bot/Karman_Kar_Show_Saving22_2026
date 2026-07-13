@@ -44,6 +44,9 @@
           <td class="py-3 pr-4">
             <div class="flex flex-wrap gap-2">
               <a class="btn btn-outline" href="{{ url_for('admin_show_detail', show_id=s['id']) }}">Manage</a>
+              <a class="btn btn-outline" href="{{ url_for('admin_show_vendors', show_id=s['id']) }}">Vendors</a>
+              <a class="btn btn-outline" href="{{ url_for('admin_show_categories', show_id=s['id']) }}">Voting Categories</a>
+              <a class="btn btn-outline" href="{{ url_for('admin_show_platform_pricing', show_id=s['id']) }}">Outside Show Pricing</a>
               <a class="btn btn-outline" href="{{ url_for('admin_show_import', show_id=s['id']) }}">Import</a>
               <a class="btn btn-outline" href="{{ url_for('admin_export_show_zip', show_id=s['id']) }}">Export</a>
               {% if admin_is_super %}
