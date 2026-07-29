@@ -132,6 +132,18 @@
         <div class="mt-1 text-xs text-slate-500">Use Participant/Judge restricted voting for one-vote-per-category participant judging. Use None for Cruise In or no-awards events.</div>
       </div>
 
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Voting Method</label>
+        {% set voting_method = (s['voting_method'] if 'voting_method' in s.keys() else 'qr_only') or 'qr_only' %}
+        <select name="voting_method" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <option value="both" {% if voting_method == 'both' %}selected{% endif %}>Both QR and car-number voting</option>
+          <option value="qr_only" {% if voting_method == 'qr_only' %}selected{% endif %}>Car-specific QR voting only</option>
+          <option value="number_only" {% if voting_method == 'number_only' %}selected{% endif %}>Car-number voting only</option>
+          <option value="disabled" {% if voting_method == 'disabled' %}selected{% endif %}>Voting disabled</option>
+        </select>
+        <div class="mt-1 text-xs text-slate-500">Controls whether voters can use individual car QR codes, the general car-number QR, or both.</div>
+      </div>
+
       <div class="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <label class="flex items-start gap-3 text-sm">
           <input type="checkbox" name="participant_voting_enabled" class="mt-1"
@@ -549,6 +561,27 @@
     </form>
   </section>
   
+  {% set voting_method = (s['voting_method'] if 'voting_method' in s.keys() else 'qr_only') or 'qr_only' %}
+  {% if voting_method in ['both', 'number_only'] %}
+  <section class="rounded-3xl bg-white border border-slate-200 shadow-sm p-6">
+    <div class="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+      <div>
+        <div class="text-xs font-semibold tracking-wide text-slate-500">GENERAL VOTING QR</div>
+        <h2 class="mt-1 text-xl font-semibold">Scan to Vote - Enter the Car Number</h2>
+        <p class="mt-1 text-sm text-slate-600">Use this sign for private voting or a staffed voting station. It opens the car-number entry page and still uses the normal payment, vote, audit, and leaderboard records.</p>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <a class="btn btn-primary" target="_blank" href="{{ url_for('car_number_vote_page', show_slug=s['slug']) }}">Open Voting Page</a>
+          <a class="btn btn-outline" href="{{ url_for('admin_show_general_vote_qr_png', show_id=s['id'], download=1) }}">Download QR</a>
+          <button type="button" class="btn btn-outline" onclick="window.print()">Print</button>
+        </div>
+      </div>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
+        <img class="mx-auto h-56 w-56" src="{{ url_for('admin_show_general_vote_qr_png', show_id=s['id']) }}" alt="Scan to Vote - Enter the Car Number">
+        <div class="mt-3 text-sm font-semibold text-slate-900">Scan to Vote - Enter the Car Number</div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
 
   {% set restricted_voting_enabled = ((s['participant_voting_enabled'] if 'participant_voting_enabled' in s.keys() else 0) == 1 or (s['voting_mode'] or '') in ['participant_restricted', 'participant_only', 'judge_only']) %}
   {% if restricted_voting_enabled %}

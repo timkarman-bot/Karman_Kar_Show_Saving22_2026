@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% set title = "Vote • " ~ show["title"] %}
+{% set title = "Vote - " ~ show["title"] %}
 
 {% block content %}
 {% if (show["voting_mode"] if "voting_mode" in show.keys() else "") == "none" or (show["payment_mode"] if "payment_mode" in show.keys() else "") == "none" %}
@@ -39,11 +39,16 @@
     <h1 class="mt-1 text-3xl font-semibold tracking-tight">{{ category_name }}</h1>
 
     <div class="mt-3 text-slate-700">
+      {% if car_photo_url %}
+        <img src="{{ car_photo_url }}" alt="Car #{{ car['car_number'] }}" class="mb-4 max-h-64 w-full rounded-2xl object-cover">
+      {% endif %}
       <div class="font-semibold">Car #{{ car["car_number"] }}</div>
       <div class="text-sm text-slate-600">
         {{ car["year"] }} {{ car["make"] }} {{ car["model"] }}
-        • Owner: {{ car["owner_name"] or "—" }}
       </div>
+      {% if entry_method == "car_number" %}
+        <div class="mt-2 text-xs font-semibold text-slate-500">Selected through private car-number voting.</div>
+      {% endif %}
     </div>
 
     {% if show["public_vote_disclosure"] %}
@@ -62,11 +67,11 @@
 
       <div class="mt-1 text-sm text-slate-700">
         ${{ '%.2f'|format((vote_price_cents or 100) / 100) }} per vote
-        • Max {{ max_votes_per_checkout }} per checkout
+        | Max {{ max_votes_per_checkout }} per checkout
       </div>
 
       <div class="text-xs text-slate-500">
-        Vote payments are processed under the event’s payment setup and counted after verification.
+        Vote payments are processed under the event's payment setup and counted after verification.
       </div>
 
       {% if payment_mode == "external" %}
@@ -80,6 +85,7 @@
       <input type="hidden" name="show_slug" value="{{ show['slug'] }}">
       <input type="hidden" name="car_token" value="{{ car['car_token'] }}">
       <input type="hidden" name="category_slug" value="{{ category_slug }}">
+      <input type="hidden" name="entry_method" value="{{ entry_method or 'car_qr' }}">
       <input type="hidden" name="vote_qty" id="vote_qty" value="{{ preset_vote_options[0] if preset_vote_options else 1 }}">
 
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -132,6 +138,9 @@
           Selected:
           <span class="font-extrabold" id="selectedLabel">{{ preset_vote_options[0] if preset_vote_options else 1 }}</span>
           vote(s)
+          <span class="mx-2 text-slate-400">|</span>
+          Total:
+          <span class="font-extrabold" id="totalLabel">${{ '%.2f'|format(((preset_vote_options[0] if preset_vote_options else 1) * (vote_price_cents or 100)) / 100) }}</span>
         </div>
 
         <button type="submit" class="btn btn-primary">
@@ -157,6 +166,8 @@
   const customInput = document.getElementById("customVotes");
   const maxVotes = {{ max_votes_per_checkout|int }};
   const initialValue = {{ (preset_vote_options[0] if preset_vote_options else 1)|int }};
+  const votePriceCents = {{ (vote_price_cents or 100)|int }};
+  const totalLabel = document.getElementById("totalLabel");
 
   let selected = initialValue;
 
@@ -174,6 +185,7 @@
     selected = n;
     qtyInput.value = String(n);
     label.textContent = String(n);
+    totalLabel.textContent = "$" + ((n * votePriceCents) / 100).toFixed(2);
 
     buttons.forEach((b) => {
       const isOn = Number(b.dataset.n) === n;

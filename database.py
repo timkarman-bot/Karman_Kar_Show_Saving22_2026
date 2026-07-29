@@ -160,6 +160,7 @@ def init_db() -> None:
         "ALTER TABLE shows ADD COLUMN participant_voting_enabled INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE shows ADD COLUMN participant_vote_change_allowed INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE shows ADD COLUMN participant_voting_completion_message TEXT",
+        "ALTER TABLE shows ADD COLUMN voting_method TEXT NOT NULL DEFAULT 'qr_only'",
     ]:
         try:
             cur.execute(sql)
@@ -432,12 +433,17 @@ def init_db() -> None:
             vote_qty INTEGER NOT NULL,
             amount_cents INTEGER NOT NULL,
             stripe_session_id TEXT NOT NULL UNIQUE,
+            entry_method TEXT NOT NULL DEFAULT 'car_qr',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY(show_id) REFERENCES shows(id),
             FOREIGN KEY(show_car_id) REFERENCES show_cars(id)
         )
         """
     )
+    try:
+        cur.execute("ALTER TABLE votes ADD COLUMN entry_method TEXT NOT NULL DEFAULT 'car_qr'")
+    except sqlite3.OperationalError:
+        pass
 
     cur.execute(
         """
@@ -451,6 +457,7 @@ def init_db() -> None:
             payment_status TEXT NOT NULL DEFAULT 'pending',
             stripe_session_id TEXT UNIQUE,
             stripe_payment_intent_id TEXT,
+            entry_method TEXT NOT NULL DEFAULT 'car_qr',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             paid_at TEXT,
             FOREIGN KEY(show_id) REFERENCES shows(id),
@@ -458,6 +465,10 @@ def init_db() -> None:
         )
         """
     )
+    try:
+        cur.execute("ALTER TABLE vote_intents ADD COLUMN entry_method TEXT NOT NULL DEFAULT 'car_qr'")
+    except sqlite3.OperationalError:
+        pass
 
     cur.execute(
         """
@@ -1133,6 +1144,7 @@ def create_show_admin(
     charity_name: str = "",
     charity_description: str = "",
     voting_mode: str = "fundraiser_unlimited",
+    voting_method: str = "both",
     participant_voting_enabled: int = 0,
     payment_mode: str = "stripe",
     charity_processor_label: str = "",
@@ -1165,6 +1177,8 @@ def create_show_admin(
     }:
         voting_mode_clean = "fundraiser_unlimited"
 
+    voting_method_clean = normalize_voting_method(voting_method, default="both")
+
     payment_mode_clean = (payment_mode or "stripe").strip().lower()
     if payment_mode_clean not in {"stripe", "external", "none"}:
         payment_mode_clean = "stripe"
@@ -1182,10 +1196,10 @@ def create_show_admin(
             cta_label, cta_url, show_on_site, sort_order, hide_address, voting_open, is_active,
             waiver_template_id, organizer_name, venue_name, venue_address_line1, venue_address_line2,
             venue_city, venue_state, venue_zip, charity_name, charity_description,
-            voting_mode, payment_mode, charity_processor_label, external_payment_url, allow_custom_votes, preset_vote_options, max_votes_per_checkout, allow_sponsorships, registration_slot_selection_mode,
+            voting_mode, voting_method, payment_mode, charity_processor_label, external_payment_url, allow_custom_votes, preset_vote_options, max_votes_per_checkout, allow_sponsorships, registration_slot_selection_mode,
             card_headline, card_subheadline, card_layout_mode
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             slug.strip(),
@@ -1226,6 +1240,7 @@ def create_show_admin(
             (charity_name or "").strip(),
             (charity_description or "").strip(),
             voting_mode_clean,
+            voting_method_clean,
             payment_mode_clean,
             (charity_processor_label or "").strip(),
             (external_payment_url or "").strip(),
@@ -1284,6 +1299,7 @@ def update_show_admin_record(
     charity_name: str = "",
     charity_description: str = "",
     voting_mode: str = "fundraiser_unlimited",
+    voting_method: str = "qr_only",
     participant_voting_enabled: int = 0,
     payment_mode: str = "stripe",
     charity_processor_label: str = "",
@@ -1312,7 +1328,7 @@ def update_show_admin_record(
             show_on_site = ?, sort_order = ?, hide_address = ?, waiver_template_id = ?,
             organizer_name = ?, venue_name = ?, venue_address_line1 = ?, venue_address_line2 = ?,
             venue_city = ?, venue_state = ?, venue_zip = ?, charity_name = ?, charity_description = ?,
-            voting_mode = ?, participant_voting_enabled = ?, payment_mode = ?, charity_processor_label = ?, external_payment_url = ?, allow_custom_votes = ?,
+            voting_mode = ?, voting_method = ?, participant_voting_enabled = ?, payment_mode = ?, charity_processor_label = ?, external_payment_url = ?, allow_custom_votes = ?,
             preset_vote_options = ?, max_votes_per_checkout = ?, allow_sponsorships = ?, registration_slot_selection_mode = ?,
             card_headline = ?, card_subheadline = ?, card_layout_mode = ?
         WHERE id = ?
@@ -1354,6 +1370,7 @@ def update_show_admin_record(
             (charity_name or "").strip(),
             (charity_description or "").strip(),
             (voting_mode or "fundraiser_unlimited").strip(),
+            normalize_voting_method(voting_method, default="qr_only"),
             1 if int(participant_voting_enabled or 0) == 1 or (voting_mode or "").strip().lower() in {"participant_restricted", "participant_only", "judge_only"} else 0,
             (payment_mode or "stripe").strip(),
             (charity_processor_label or "").strip(),
@@ -1818,6 +1835,7 @@ def update_show_admin_settings(
     public_registration_disclosure: str,
     public_donation_disclosure: str,
     voting_mode: str = "fundraiser_unlimited",
+    voting_method: str = "qr_only",
     participant_voting_enabled: int = 0,
     payment_mode: str = "stripe",
     charity_processor_label: str = "",
@@ -1869,6 +1887,7 @@ def update_show_admin_settings(
     voting_mode = (voting_mode or "fundraiser_unlimited").strip().lower()
     if voting_mode not in {"fundraiser_unlimited", "restricted_single", "none"}:
         voting_mode = "fundraiser_unlimited"
+    voting_method = normalize_voting_method(voting_method, default="qr_only")
 
     payment_mode = (payment_mode or "stripe").strip().lower()
     if payment_mode not in {"stripe", "external", "none"}:
@@ -1900,6 +1919,7 @@ def update_show_admin_settings(
             public_registration_disclosure = ?,
             public_donation_disclosure = ?,
             voting_mode = ?,
+            voting_method = ?,
             payment_mode = ?,
             charity_processor_label = ?,
             external_payment_url = ?,
@@ -1922,6 +1942,7 @@ def update_show_admin_settings(
             (public_registration_disclosure or "").strip(),
             (public_donation_disclosure or "").strip(),
             voting_mode,
+            voting_method,
             payment_mode,
             (charity_processor_label or "").strip(),
             (external_payment_url or "").strip(),
@@ -2145,6 +2166,84 @@ def get_show_car_by_number(show_id: int, car_number: int) -> Optional[sqlite3.Ro
     ).fetchone()
     conn.close()
     return row
+
+
+def normalize_voting_method(value: str, default: str = "qr_only") -> str:
+    clean = (value or default or "qr_only").strip().lower().replace("-", "_")
+    aliases = {
+        "both_qr_and_car_number": "both",
+        "both_qr_number": "both",
+        "both": "both",
+        "car_specific_qr": "qr_only",
+        "car_qr": "qr_only",
+        "qr": "qr_only",
+        "qr_only": "qr_only",
+        "car_number": "number_only",
+        "number": "number_only",
+        "number_only": "number_only",
+        "manual": "number_only",
+        "disabled": "disabled",
+        "none": "disabled",
+    }
+    return aliases.get(clean, default if default in {"both", "qr_only", "number_only", "disabled"} else "qr_only")
+
+
+def find_vote_car_by_number(show_id: int, car_number_raw: str) -> Dict[str, Any]:
+    raw = (car_number_raw or "").strip()
+    digits = re.sub(r"\D+", "", raw)
+    if not digits:
+        return {"status": "invalid", "message": "Enter a car number to continue.", "car": None, "suggestions": []}
+
+    normalized = str(int(digits))
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT sc.*, p.name AS owner_name
+            FROM show_cars sc
+            JOIN people p ON p.id = sc.person_id
+            WHERE sc.show_id = ?
+              AND CAST(sc.car_number AS INTEGER) = ?
+              AND COALESCE(sc.is_placeholder, 0) = 0
+              AND COALESCE(sc.registration_payment_status, '') NOT IN ('removed', 'canceled', 'cancelled', 'refunded', 'inactive')
+              AND COALESCE(sc.registration_state, '') NOT IN ('removed', 'canceled', 'cancelled', 'inactive')
+              AND COALESCE(sc.checked_in_at, '') != ''
+            ORDER BY sc.car_number ASC
+            """,
+            (int(show_id), int(normalized)),
+        ).fetchall()
+        if len(rows) == 1:
+            return {"status": "ok", "message": "", "car": rows[0], "suggestions": []}
+        if len(rows) > 1:
+            return {
+                "status": "ambiguous",
+                "message": "That car number matches more than one active checked-in car. Please ask event staff to confirm the number.",
+                "car": None,
+                "suggestions": [],
+            }
+
+        nearby = conn.execute(
+            """
+            SELECT car_number
+            FROM show_cars
+            WHERE show_id = ?
+              AND COALESCE(is_placeholder, 0) = 0
+              AND COALESCE(registration_payment_status, '') NOT IN ('removed', 'canceled', 'cancelled', 'refunded', 'inactive')
+              AND COALESCE(registration_state, '') NOT IN ('removed', 'canceled', 'cancelled', 'inactive')
+              AND COALESCE(checked_in_at, '') != ''
+            ORDER BY ABS(CAST(car_number AS INTEGER) - ?) ASC, car_number ASC
+            LIMIT 3
+            """,
+            (int(show_id), int(normalized)),
+        ).fetchall()
+        return {
+            "status": "not_found",
+            "message": "We could not find an active checked-in car with that number. Please check the number and try again.",
+            "car": None,
+            "suggestions": [int(r["car_number"]) for r in nearby],
+        }
+    finally:
+        conn.close()
 
 def get_next_available_car_number(show_id: int) -> int:
     conn = _conn()
@@ -3420,12 +3519,13 @@ def restricted_leaderboard_by_category(show_id: int) -> Dict[str, List[Tuple[int
 
 # VOTING
 
-def create_vote_intent(show_id: int, show_car_id: int, category: str, vote_qty: int, amount_cents: int) -> int:
+def create_vote_intent(show_id: int, show_car_id: int, category: str, vote_qty: int, amount_cents: int, entry_method: str = "car_qr") -> int:
     conn = _conn()
     cur = conn.cursor()
+    entry_method_clean = "car_number" if (entry_method or "").strip().lower() == "car_number" else "car_qr"
     cur.execute(
-        "INSERT INTO vote_intents (show_id, show_car_id, category, vote_qty, amount_cents, payment_status) VALUES (?, ?, ?, ?, ?, 'pending')",
-        (show_id, show_car_id, category, vote_qty, amount_cents),
+        "INSERT INTO vote_intents (show_id, show_car_id, category, vote_qty, amount_cents, payment_status, entry_method) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+        (show_id, show_car_id, category, vote_qty, amount_cents, entry_method_clean),
     )
     conn.commit()
     vid = int(cur.lastrowid)
@@ -3468,8 +3568,8 @@ def finalize_vote_intent_paid(stripe_session_id: str) -> Dict[str, Any]:
         existing_vote = cur.execute("SELECT id FROM votes WHERE stripe_session_id = ? LIMIT 1", (stripe_session_id,)).fetchone()
         if not existing_vote:
             cur.execute(
-                "INSERT INTO votes (show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id) VALUES (?, ?, ?, ?, ?, ?)",
-                (int(vi["show_id"]), int(vi["show_car_id"]), vi["category"], int(vi["vote_qty"]), int(vi["amount_cents"]), stripe_session_id),
+                "INSERT INTO votes (show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id, entry_method) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (int(vi["show_id"]), int(vi["show_car_id"]), vi["category"], int(vi["vote_qty"]), int(vi["amount_cents"]), stripe_session_id, vi["entry_method"] if "entry_method" in vi.keys() else "car_qr"),
             )
         cur.execute(
             "UPDATE vote_intents SET payment_status = 'paid', paid_at = COALESCE(paid_at, datetime('now')) WHERE id = ?",
@@ -3507,9 +3607,9 @@ def finalize_external_vote_intent(vote_intent_id: int, approval_reference: str =
             cur.execute(
                 """
                 INSERT INTO votes (
-                    show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id
+                    show_id, show_car_id, category, vote_qty, amount_cents, stripe_session_id, entry_method
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     int(vi["show_id"]),
@@ -3518,6 +3618,7 @@ def finalize_external_vote_intent(vote_intent_id: int, approval_reference: str =
                     int(vi["vote_qty"]),
                     int(vi["amount_cents"]),
                     synthetic_session_id,
+                    vi["entry_method"] if "entry_method" in vi.keys() else "car_qr",
                 ),
             )
 
@@ -3648,6 +3749,7 @@ def export_votes_for_show(show_id: int, start_date: str = "", end_date: str = ""
             v.vote_qty,
             v.amount_cents,
             v.stripe_session_id,
+            v.entry_method,
             sc.car_number,
             sc.year,
             sc.make,

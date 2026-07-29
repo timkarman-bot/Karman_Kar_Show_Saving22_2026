@@ -160,6 +160,16 @@
 
           <div class="grid gap-4 md:grid-cols-3">
             <div>
+              <label class="text-sm font-semibold">Voting Method</label>
+              {% set voting_method = (show['voting_method'] if show and 'voting_method' in show.keys() else 'qr_only') or 'qr_only' %}
+              <select name="voting_method" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">
+                <option value="both" {% if voting_method == 'both' %}selected{% endif %}>Both QR and car-number voting</option>
+                <option value="qr_only" {% if voting_method == 'qr_only' %}selected{% endif %}>Car-specific QR voting only</option>
+                <option value="number_only" {% if voting_method == 'number_only' %}selected{% endif %}>Car-number voting only</option>
+                <option value="disabled" {% if voting_method == 'disabled' %}selected{% endif %}>Voting disabled</option>
+              </select>
+            </div>
+            <div>
               <label class="text-sm font-semibold">Public Vote Disclosure</label>
               <textarea name="public_vote_disclosure" rows="4" class="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-3">{{ show["public_vote_disclosure"] if show else "" }}</textarea>
             </div>

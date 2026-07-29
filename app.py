@@ -62,6 +62,8 @@ from database import (
     mark_show_car_checked_in,
     get_show_car_public_by_token,
     get_show_car_private_by_token,
+    find_vote_car_by_number,
+    normalize_voting_method,
     create_registration_intent,
     get_registration_intent_by_token,
     attach_stripe_session_to_registration_intent,
@@ -646,6 +648,52 @@ def _show_voting_mode(show: Any) -> str:
     } else "fundraiser_unlimited"
 
 
+def _show_voting_method(show: Any) -> str:
+    value = (show["voting_method"] if show and "voting_method" in show.keys() else "qr_only") or "qr_only"
+    return normalize_voting_method(value, default="qr_only")
+
+
+def _vote_method_session_key(show_id: int) -> str:
+    return f"car_number_vote_confirmed_{int(show_id)}"
+
+
+def _show_allows_vote_entry_method(show: Any, entry_method: str) -> bool:
+    method = _show_voting_method(show)
+    entry = "car_number" if (entry_method or "").strip().lower() == "car_number" else "car_qr"
+    if method == "disabled":
+        return False
+    if entry == "car_number":
+        return method in {"both", "number_only"}
+    return method in {"both", "qr_only"}
+
+
+def _vote_car_is_publicly_eligible(car: Any) -> bool:
+    if not car:
+        return False
+    if int(car["is_placeholder"] or 0) == 1:
+        return False
+    payment_status = str(car["registration_payment_status"] or "").strip().lower()
+    registration_state = str(car["registration_state"] or "").strip().lower()
+    blocked = {"removed", "canceled", "cancelled", "refunded", "inactive"}
+    if payment_status in blocked or registration_state in blocked:
+        return False
+    return bool(str(car["checked_in_at"] or "").strip())
+
+
+def _car_public_photo_url(car: Any) -> str:
+    if not car:
+        return ""
+    for key in ("photo_url", "photo_path", "photo_filename", "vehicle_photo_url", "vehicle_image_path"):
+        if key in car.keys() and car[key]:
+            value = str(car[key]).strip()
+            if not value:
+                continue
+            if key == "photo_filename" and not value.startswith(("http://", "https://", "/")):
+                return url_for("static", filename=f"uploads/{value}")
+            return value
+    return ""
+
+
 def _show_participant_voting(show: Any) -> bool:
     return _show_voting_mode(show) in {"participant_restricted", "participant_only", "judge_only"}
 
@@ -691,6 +739,8 @@ def _show_voting_disabled(show: Any) -> bool:
     except Exception:
         return True
     if _show_voting_mode(show) == "none":
+        return True
+    if _show_voting_method(show) == "disabled":
         return True
     if _show_payment_mode(show) == "none" and _show_voting_mode(show) not in {"participant_restricted", "restricted_single"}:
         return True
@@ -2740,6 +2790,7 @@ def attendee_done(show_slug: str):
 
 @app.get("/v/<show_slug>/<car_token>/<category_slug>")
 def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
+    entry_method = "car_number" if request.args.get("entry_method", "").strip().lower() == "car_number" else "car_qr"
     show = get_show_by_slug(show_slug)
     if not show:
         return "Show not found.", 404
@@ -2752,6 +2803,14 @@ def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
 
     if _show_voting_disabled(show):
         return render_template("voting_closed.html", show=show)
+    if not _show_allows_vote_entry_method(show, entry_method):
+        return render_template("voting_closed.html", show=show), 403
+    if entry_method == "car_number":
+        expected = session.get(_vote_method_session_key(int(show["id"])), {})
+        if not isinstance(expected, dict) or expected.get("car_token") != car_token or expected.get("category_slug") != category_slug:
+            return render_template("voting_closed.html", show=show), 403
+    if not _show_participant_voting(show) and not _vote_car_is_publicly_eligible(car):
+        return render_template("voting_closed.html", show=show), 403
 
     if _show_participant_voting(show):
         voter = _active_restricted_voter(show)
@@ -2786,9 +2845,55 @@ def vote_qty_page(show_slug: str, car_token: str, category_slug: str):
         vote_price_cents=int(show["vote_price_cents"] or 100),
         payment_mode=_show_payment_mode(show),
         voting_mode=_show_voting_mode(show),
+        voting_method=_show_voting_method(show),
+        entry_method=entry_method,
+        car_photo_url=_car_public_photo_url(car),
         preset_vote_options=_show_preset_vote_options(show),
         allow_custom_votes=_show_allow_custom_votes(show),
         max_votes_per_checkout=_show_max_votes_per_checkout(show),
+    )
+
+
+@app.route("/vote/<show_slug>", methods=["GET", "POST"])
+@rate_limit("car_number_vote_lookup", 40, 300)
+def car_number_vote_page(show_slug: str):
+    show = get_show_by_slug(show_slug)
+    if not show:
+        return "Show not found.", 404
+    if _show_voting_disabled(show) or not _show_allows_vote_entry_method(show, "car_number"):
+        return render_template("voting_closed.html", show=show), 403
+    if _show_participant_voting(show):
+        return render_template("voting_closed.html", show=show), 403
+
+    selected_category = request.form.get("category_slug", request.args.get("category_slug", "peoples-choice")).strip()
+    if selected_category not in CATEGORY_SLUGS:
+        selected_category = "peoples-choice"
+
+    lookup_result = None
+    if request.method == "POST":
+        car_number = request.form.get("car_number", "")
+        lookup_result = find_vote_car_by_number(int(show["id"]), car_number)
+        if lookup_result.get("status") == "ok":
+            car = lookup_result["car"]
+            session[_vote_method_session_key(int(show["id"]))] = {
+                "car_token": car["car_token"],
+                "category_slug": selected_category,
+            }
+            return render_template(
+                "vote_car_number_confirm.html",
+                show=show,
+                car=car,
+                category_slug=selected_category,
+                category_name=CATEGORY_SLUGS[selected_category],
+                car_photo_url=_car_public_photo_url(car),
+            )
+
+    return render_template(
+        "vote_car_number_entry.html",
+        show=show,
+        categories=CATEGORY_SLUGS,
+        selected_category=selected_category,
+        lookup_result=lookup_result,
     )
 
 
@@ -2950,6 +3055,7 @@ def create_checkout_session():
     show_slug = request.form.get("show_slug", "").strip()
     car_token = request.form.get("car_token", "").strip()
     category_slug = request.form.get("category_slug", "").strip()
+    entry_method = "car_number" if request.form.get("entry_method", "").strip().lower() == "car_number" else "car_qr"
     qty_raw = request.form.get("vote_qty", "1").strip()
 
     show = get_show_by_slug(show_slug)
@@ -2958,6 +3064,8 @@ def create_checkout_session():
 
     if _show_voting_disabled(show):
         return jsonify({"ok": False, "error": "Voting is disabled or currently closed for this event."}), 403
+    if not _show_allows_vote_entry_method(show, entry_method):
+        return jsonify({"ok": False, "error": "This voting method is not enabled for this event."}), 403
 
     if category_slug not in CATEGORY_SLUGS:
         return jsonify({"ok": False, "error": "Invalid category."}), 400
@@ -2965,6 +3073,12 @@ def create_checkout_session():
     car = get_show_car_public_by_token(int(show["id"]), car_token)
     if not car:
         return jsonify({"ok": False, "error": "Car not found."}), 404
+    if entry_method == "car_number":
+        expected = session.get(_vote_method_session_key(int(show["id"])), {})
+        if not isinstance(expected, dict) or expected.get("car_token") != car_token or expected.get("category_slug") != category_slug:
+            return jsonify({"ok": False, "error": "Please confirm the car number before continuing."}), 403
+    if not _vote_car_is_publicly_eligible(car):
+        return jsonify({"ok": False, "error": "That car is not eligible for voting right now."}), 403
 
     try:
         vote_qty = int(qty_raw)
@@ -2992,6 +3106,7 @@ def create_checkout_session():
             CATEGORY_SLUGS[category_slug],
             vote_qty,
             amount_cents,
+            entry_method=entry_method,
         )
 
         conn = _conn_direct()
@@ -3020,10 +3135,14 @@ def create_checkout_session():
         CATEGORY_SLUGS[category_slug],
         vote_qty,
         amount_cents,
+        entry_method=entry_method,
     )
 
     success_url = _abs_url(url_for("vote_success")) + "?session_id={CHECKOUT_SESSION_ID}&show_slug=" + show_slug
-    cancel_url = _abs_url(url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug))
+    if entry_method == "car_number":
+        cancel_url = _abs_url(url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug, entry_method="car_number"))
+    else:
+        cancel_url = _abs_url(url_for("vote_qty_page", show_slug=show_slug, car_token=car_token, category_slug=category_slug))
 
     session_obj = stripe.checkout.Session.create(
         mode="payment",
@@ -3048,6 +3167,7 @@ def create_checkout_session():
             "show_car_id": str(car["id"]),
             "category": CATEGORY_SLUGS[category_slug],
             "vote_qty": str(vote_qty),
+            "entry_method": entry_method,
         },
 #        stripe_account=acct,
     )
@@ -4458,6 +4578,7 @@ def admin_show_settings():
         public_registration_disclosure=request.form.get("public_registration_disclosure", ""),
         public_donation_disclosure=request.form.get("public_donation_disclosure", ""),
         voting_mode=request.form.get("voting_mode", "fundraiser_unlimited").strip(),
+        voting_method=request.form.get("voting_method", "qr_only").strip(),
         payment_mode=request.form.get("payment_mode", "stripe").strip(),
         charity_processor_label=request.form.get("charity_processor_label", "").strip(),
         external_payment_url=request.form.get("external_payment_url", "").strip(),
@@ -4518,6 +4639,31 @@ def admin_show_detail(show_id: int):
         slots_by_show=slots_by_show,
         classes_by_show=classes_by_show,
         show_voters=list_show_voters(int(show_id)),
+    )
+
+
+@app.get("/admin/shows/<int:show_id>/general-vote-qr.png")
+@require_admin
+def admin_show_general_vote_qr_png(show_id: int):
+    _require_show_access(show_id)
+    show = get_show_by_id(show_id)
+    if not show:
+        abort(404)
+    import qrcode
+
+    vote_url = _abs_url(url_for("car_number_vote_page", show_slug=show["slug"]))
+    qr = qrcode.QRCode(version=1, box_size=12, border=3)
+    qr.add_data(vote_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    mem = io.BytesIO()
+    img.save(mem, format="PNG")
+    mem.seek(0)
+    return send_file(
+        mem,
+        mimetype="image/png",
+        as_attachment=request.args.get("download", "").strip() == "1",
+        download_name=f"{show['slug']}-scan-to-vote-enter-car-number.png",
     )
 
 
@@ -4624,10 +4770,12 @@ def admin_shows_create():
         waiver_template_id = None
 
     voting_mode = request.form.get("voting_mode", "fundraiser_unlimited").strip().lower()
+    voting_method = request.form.get("voting_method", "both").strip().lower()
     payment_mode = request.form.get("payment_mode", "stripe").strip().lower()
     show_type = (request.form.get("show_type") or "full").strip().lower().replace("-", "_")
     if show_type == "cruise_in":
         voting_mode = "none" if voting_mode == "fundraiser_unlimited" else voting_mode
+        voting_method = "disabled" if voting_method == "both" else voting_method
         payment_mode = "none" if payment_mode == "stripe" else payment_mode
     external_payment_url = request.form.get("external_payment_url", "").strip()
     charity_processor_label = request.form.get("charity_processor_label", "").strip()
@@ -4689,6 +4837,7 @@ def admin_shows_create():
         charity_name=request.form.get("charity_name", "").strip(),
         charity_description=request.form.get("charity_description", "").strip(),
         voting_mode=voting_mode,
+        voting_method=voting_method,
         participant_voting_enabled=1 if request.form.get("participant_voting_enabled") == "on" or voting_mode in {"participant_restricted", "participant_only", "judge_only"} else 0,
         payment_mode=payment_mode,
         charity_processor_label=charity_processor_label,
@@ -4724,10 +4873,12 @@ def admin_shows_update(show_id: int):
         waiver_template_id = None
 
     voting_mode = request.form.get("voting_mode", "fundraiser_unlimited").strip().lower()
+    voting_method = request.form.get("voting_method", "qr_only").strip().lower()
     payment_mode = request.form.get("payment_mode", "stripe").strip().lower()
     show_type = (request.form.get("show_type") or "full").strip().lower().replace("-", "_")
     if show_type == "cruise_in":
         voting_mode = "none" if voting_mode == "fundraiser_unlimited" else voting_mode
+        voting_method = "disabled" if voting_method == "qr_only" else voting_method
         payment_mode = "none" if payment_mode == "stripe" else payment_mode
     external_payment_url = request.form.get("external_payment_url", "").strip()
     charity_processor_label = request.form.get("charity_processor_label", "").strip()
@@ -4788,6 +4939,7 @@ def admin_shows_update(show_id: int):
         charity_name=request.form.get("charity_name", "").strip(),
         charity_description=request.form.get("charity_description", "").strip(),
         voting_mode=voting_mode,
+        voting_method=voting_method,
         participant_voting_enabled=1 if request.form.get("participant_voting_enabled") == "on" or voting_mode in {"participant_restricted", "participant_only", "judge_only"} else 0,
         payment_mode=payment_mode,
         charity_processor_label=charity_processor_label,
@@ -5395,6 +5547,7 @@ def admin_export_votes():
         "vote_qty",
         "amount_cents",
         "stripe_session_id",
+        "entry_method",
         "car_number",
         "year",
         "make",
@@ -5411,6 +5564,7 @@ def admin_export_votes():
             r["vote_qty"],
             r["amount_cents"],
             r["stripe_session_id"],
+            r["entry_method"] if "entry_method" in r.keys() else "car_qr",
             r["car_number"],
             r["year"],
             r["make"],

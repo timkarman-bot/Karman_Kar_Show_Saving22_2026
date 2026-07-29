@@ -123,6 +123,15 @@
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Show Start Time</label><input name="show_start_time" class="w-full rounded-2xl border border-slate-200 px-4 py-3"></div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Show End Time</label><input name="show_end_time" class="w-full rounded-2xl border border-slate-200 px-4 py-3"></div>
       <div><label class="block text-sm font-medium text-slate-700 mb-1">Max Cars</label><input name="max_cars" class="w-full rounded-2xl border border-slate-200 px-4 py-3" placeholder="Optional"></div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Voting Method</label>
+        <select name="voting_method" class="w-full rounded-2xl border border-slate-200 px-4 py-3">
+          <option value="both" selected>Both QR and car-number voting</option>
+          <option value="qr_only">Car-specific QR voting only</option>
+          <option value="number_only">Car-number voting only</option>
+          <option value="disabled">Voting disabled</option>
+        </select>
+      </div>
       <div class="md:col-span-2"><button type="submit" class="btn btn-primary">Create Show</button></div>
     </form>
   </section>
