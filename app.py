@@ -4891,6 +4891,15 @@ def admin_shows_update(show_id: int):
     except ValueError:
         max_votes_per_checkout = 50
 
+    max_cars_raw = request.form.get("max_cars", "").strip()
+    try:
+        max_cars = int(max_cars_raw) if max_cars_raw else None
+        if max_cars is not None and max_cars < 1:
+            raise ValueError
+    except ValueError:
+        flash("Maximum cars must be a positive whole number.", "error")
+        return redirect(url_for("admin_show_detail", show_id=show_id))
+
     slug = request.form.get("slug", "").strip()
     flyer_image_path = request.form.get("flyer_image_path", "").strip()
     flyer_file = request.files.get("flyer_image")
